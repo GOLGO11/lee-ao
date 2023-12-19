@@ -14,7 +14,7 @@ command = "mdbook-open-on-gh"
 renderer = ["html"]
 
 [output.html]
-git-repository-url = "https://github.com/whatot/leeao"
+git-repository-url = "https://golgo11.github.io/lee-ao"
 git-branch = "master"
 
 [output.html.print]
