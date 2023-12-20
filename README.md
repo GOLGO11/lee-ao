@@ -10,7 +10,7 @@
 
 ## 所有权说明
 
-**这个 github 帐号 whatot和GOLGO11 并非原著者，whatot和GOLGO11只是将 wjm_tcy 编著的大李敖全集进行格式化，没有其它额外加工。
+**github 帐号 whatot和GOLGO11 并非原著者，whatot和GOLGO11只是将 wjm_tcy 编著的大李敖全集进行格式化，没有其它额外加工。
 所有权利由 leeao 与 wjm_tcy 保持，此处仅为传播与留存。**
 **编著者介绍见同目录“wjm_tcy.md”**
 
