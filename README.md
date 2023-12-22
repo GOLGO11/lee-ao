@@ -161,10 +161,4 @@
 
 1995年9月10日在中国台湾
 
-李敖影音E书QQ群（578505007）：wjm_tcy（不自由的自由）制作！
-
-李敖影音E书籍②群：437813363
-
-李敖研究网（需梯子）：https://web.archive.org/web/20191226173450/http://leeao.com.cn/index.htm
-
-李敖资源下载站：leeao.net或者hk.leeao.net
+wjm_tcy（不自由的自由）制作！
