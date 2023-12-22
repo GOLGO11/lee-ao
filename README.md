@@ -6,6 +6,8 @@
 
 <https://golgo11.github.io/lee-ao/index>
 
+<https://books.leeao.net/index.html>
+
 > 由 github action 驱动自动构建部署 master 最新版到 github page 中
 
 ## 所有权说明
@@ -19,7 +21,7 @@
 我看whatot仓库的大李敖全集版本过于老旧，现在wjm_tcy已经发布了新的5.0版本，于是
 打算更新mdbook版本到最新版。
 
-## html,epub,pdf,azw3,mobi,latex,exe,docx,txt
+## html,epub,pdf,azw3,mobi,exe,docx,txt
 
 这些格式已经上传到了我的另一个仓库
 <https://github.com/GOLGO11/leeao>
