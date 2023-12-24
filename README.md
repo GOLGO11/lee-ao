@@ -4,16 +4,15 @@
 
 ## 在线浏览
 
-<https://golgo11.github.io/lee-ao/index>
-
 <https://books.leeao.net/index.html>
 
 > 由 github action 驱动自动构建部署 master 最新版到 github page 中
 
 ## 所有权说明
 
-**github 帐号 whatot和GOLGO11 并非原著者，whatot和GOLGO11只是将 wjm_tcy 编著的大李敖全集进行格式化，没有其它额外加工。
-所有权利由 leeao 与 wjm_tcy 保持，此处仅为传播与留存。**
+**github 帐号 whatot和GOLGO11 并非原著者，whatot和GOLGO11只是将 wjm_tcy 等人编著的大李敖全集进行格式化加工。
+所有权利由 leeao 与 wjm_tcy 等人保持，此处仅为传播与留存。**
+
 **编著者介绍见同目录“wjm_tcy.md”**
 
 ## 建库本意
