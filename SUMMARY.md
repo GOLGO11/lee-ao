@@ -1,7 +1,6 @@
 # Summary
 
 [项目简介](README.md)
-[wjm_tcy 简介](wjm_tcy.md)
 
 - [自传回忆类](01.自传回忆类/README.md)
   - [李敖自传与回忆](01.自传回忆类/李敖自传与回忆.md)
