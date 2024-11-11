@@ -1,2 +1,5 @@
-var button = "<a role='button' id="+jinfo[i].id+" onclick='function(this.id)'><i class='icon-edit'></i></a>";
-MyDiv.innerHTML += button;
+var oBtn = document.createElement("input");
+oBtn.id = "btn";
+oBtn.type = "button";
+oBtn.value = "按钮";
+document.body.appendChild(oBtn);
