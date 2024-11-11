@@ -16,6 +16,7 @@ renderer = ["html"]
 [output.html]
 git-repository-url = "https://golgo11.github.io/lee-ao"
 git-branch = "master"
+additional-js = ["test.js"]
 
 [output.html.print]
 # print超过github上限50MB，于是默认关闭
