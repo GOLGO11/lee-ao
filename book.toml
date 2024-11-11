@@ -24,12 +24,3 @@ enable = false
 [output.html.search]
 # search超过github上限100MB，于是默认关闭
 enable = false
-
-[output.html.playground]
-editable = true
-
-```rust,editable
-fn main() {
-	println!("Hello World!");
-}
-```
