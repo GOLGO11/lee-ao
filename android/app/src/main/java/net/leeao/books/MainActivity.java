@@ -370,104 +370,107 @@ public class MainActivity extends Activity {
         }
 
         new AlertDialog.Builder(this)
-                .setTitle("离线全集")
-                .setMessage("即将下载所有书籍内容（约 8700 个文件），以便无网络时阅读。可能需要几分钟，是否继续？")
-                .setPositiveButton("开始下载", (dialog, which) -> {
-                    downloadInProgress = true;
-                    progressBar.setProgress(0);
-                    progressBar.setVisibility(View.VISIBLE);
-                    titleView.setText("准备下载...");
-
-                    new Thread(() -> {
-                        try {
-                            File baseDir = new File(getFilesDir(), "offline_data");
-                            if (!baseDir.exists()) baseDir.mkdirs();
-
-                            File manifestFile = new File(baseDir, "search/manifest.json");
-                            if (!manifestFile.exists() || manifestFile.length() == 0) {
-                                downloadFile(new URL(HOME_URL + "search/manifest.json"), manifestFile);
-                            }
-
-                            String manifestText = fetchText(new URL(HOME_URL + "search/manifest.json"));
-                            JSONObject manifest = new JSONObject(manifestText);
-                            JSONArray docs = manifest.getJSONArray("docs");
-
-                            List<String[]> downloadList = new ArrayList<>();
-                            
-                            downloadList.add(new String[]{"index.html", "index.html"});
-                            downloadList.add(new String[]{"css/variables.css", "css/variables.css"});
-                            downloadList.add(new String[]{"css/general.css", "css/general.css"});
-                            downloadList.add(new String[]{"css/chrome.css", "css/chrome.css"});
-                            downloadList.add(new String[]{"favicon.svg", "favicon.svg"});
-                            downloadList.add(new String[]{"favicon.png", "favicon.png"});
-                            downloadList.add(new String[]{"clipboard.min.js", "clipboard.min.js"});
-                            downloadList.add(new String[]{"highlight.js", "highlight.js"});
-                            downloadList.add(new String[]{"book.js", "book.js"});
-                            downloadList.add(new String[]{"elasticlunr.min.js", "elasticlunr.min.js"});
-                            downloadList.add(new String[]{"mark.min.js", "mark.min.js"});
-                            downloadList.add(new String[]{"searcher.js", "searcher.js"});
-
-                            for (int i = 0; i < docs.length(); i++) {
-                                JSONObject doc = docs.getJSONObject(i);
-                                String destUrl = doc.optString("url");
-                                if (destUrl != null && !destUrl.isEmpty()) {
-                                    String decodedPath = java.net.URLDecoder.decode(destUrl, "UTF-8");
-                                    downloadList.add(new String[]{destUrl, decodedPath});
-                                }
-                                String destText = doc.optString("text");
-                                if (destText != null && !destText.isEmpty()) {
-                                    downloadList.add(new String[]{destText, destText});
-                                }
-                            }
-
-                            int total = downloadList.size();
-                            AtomicInteger completed = new AtomicInteger(0);
-                            ExecutorService executor = Executors.newFixedThreadPool(8);
-
-                            for (String[] pair : downloadList) {
-                                executor.submit(() -> {
-                                    try {
-                                        String dlPath = pair[0];
-                                        String localPath = pair[1].startsWith("/") ? pair[1].substring(1) : pair[1];
-                                        File f = new File(baseDir, localPath);
-                                        if (!f.exists() || f.length() == 0) {
-                                            downloadFile(new URL(HOME_URL + dlPath), f);
-                                        }
-                                    } catch (Exception e) {
-                                        // ignore failures, retry next time
-                                    } finally {
-                                        int c = completed.incrementAndGet();
-                                        if (c % 10 == 0 || c == total) {
-                                            int progress = (c * 100) / total;
-                                            runOnUiThread(() -> {
-                                                progressBar.setProgress(progress);
-                                                titleView.setText("离线: " + c + "/" + total);
-                                            });
-                                        }
-                                    }
-                                });
-                            }
-
-                            executor.shutdown();
-                            while (!executor.isTerminated()) {
-                                Thread.sleep(500);
-                            }
-
-                            runOnUiThread(() -> {
-                                Toast.makeText(this, "离线下载完成！", Toast.LENGTH_LONG).show();
-                                titleView.setText(trimTitle(webView.getTitle()));
-                            });
-
-                        } catch (Exception e) {
-                            runOnUiThread(() -> Toast.makeText(this, "离线下载失败：" + e.getMessage(), Toast.LENGTH_LONG).show());
-                        } finally {
-                            downloadInProgress = false;
-                            runOnUiThread(() -> progressBar.setVisibility(View.GONE));
-                        }
-                    }).start();
-                })
+                .setTitle("离线全集选项")
+                .setMessage("请选择离线模式：\n\n【增量/断点模式】仅下载尚未下载的内容，速度最快。\n\n【强制全量更新】无视本地已有文件，重新拉取所有内容（用于网页内容有更新时覆盖）。")
+                .setPositiveButton("增量/断点续传", (dialog, which) -> executeDownload(false))
+                .setNeutralButton("强制全量更新", (dialog, which) -> executeDownload(true))
                 .setNegativeButton("取消", null)
                 .show();
+    }
+
+    private void executeDownload(boolean forceUpdate) {
+        downloadInProgress = true;
+        progressBar.setProgress(0);
+        progressBar.setVisibility(View.VISIBLE);
+        titleView.setText("准备下载" + (forceUpdate ? "(强制)" : "") + "...");
+
+        new Thread(() -> {
+            try {
+                File baseDir = new File(getFilesDir(), "offline_data");
+                if (!baseDir.exists()) baseDir.mkdirs();
+
+                File manifestFile = new File(baseDir, "search/manifest.json");
+                if (forceUpdate || !manifestFile.exists() || manifestFile.length() == 0) {
+                    downloadFile(new URL(HOME_URL + "search/manifest.json"), manifestFile);
+                }
+
+                String manifestText = fetchText(new URL(HOME_URL + "search/manifest.json"));
+                JSONObject manifest = new JSONObject(manifestText);
+                JSONArray docs = manifest.getJSONArray("docs");
+
+                List<String[]> downloadList = new ArrayList<>();
+                
+                downloadList.add(new String[]{"index.html", "index.html"});
+                downloadList.add(new String[]{"css/variables.css", "css/variables.css"});
+                downloadList.add(new String[]{"css/general.css", "css/general.css"});
+                downloadList.add(new String[]{"css/chrome.css", "css/chrome.css"});
+                downloadList.add(new String[]{"favicon.svg", "favicon.svg"});
+                downloadList.add(new String[]{"favicon.png", "favicon.png"});
+                downloadList.add(new String[]{"clipboard.min.js", "clipboard.min.js"});
+                downloadList.add(new String[]{"highlight.js", "highlight.js"});
+                downloadList.add(new String[]{"book.js", "book.js"});
+                downloadList.add(new String[]{"elasticlunr.min.js", "elasticlunr.min.js"});
+                downloadList.add(new String[]{"mark.min.js", "mark.min.js"});
+                downloadList.add(new String[]{"searcher.js", "searcher.js"});
+
+                for (int i = 0; i < docs.length(); i++) {
+                    JSONObject doc = docs.getJSONObject(i);
+                    String destUrl = doc.optString("url");
+                    if (destUrl != null && !destUrl.isEmpty()) {
+                        String decodedPath = java.net.URLDecoder.decode(destUrl, "UTF-8");
+                        downloadList.add(new String[]{destUrl, decodedPath});
+                    }
+                    String destText = doc.optString("text");
+                    if (destText != null && !destText.isEmpty()) {
+                        downloadList.add(new String[]{destText, destText});
+                    }
+                }
+
+                int total = downloadList.size();
+                AtomicInteger completed = new AtomicInteger(0);
+                ExecutorService executor = Executors.newFixedThreadPool(8);
+
+                for (String[] pair : downloadList) {
+                    executor.submit(() -> {
+                        try {
+                            String dlPath = pair[0];
+                            String localPath = pair[1].startsWith("/") ? pair[1].substring(1) : pair[1];
+                            File f = new File(baseDir, localPath);
+                            if (forceUpdate || !f.exists() || f.length() == 0) {
+                                downloadFile(new URL(HOME_URL + dlPath), f);
+                            }
+                        } catch (Exception e) {
+                            // ignore failures, retry next time
+                        } finally {
+                            int c = completed.incrementAndGet();
+                            if (c % 10 == 0 || c == total) {
+                                int progress = (c * 100) / total;
+                                runOnUiThread(() -> {
+                                    progressBar.setProgress(progress);
+                                    titleView.setText("离线: " + c + "/" + total);
+                                });
+                            }
+                        }
+                    });
+                }
+
+                executor.shutdown();
+                while (!executor.isTerminated()) {
+                    Thread.sleep(500);
+                }
+
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "离线下载完成！", Toast.LENGTH_LONG).show();
+                    titleView.setText(trimTitle(webView.getTitle()));
+                });
+
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "离线下载失败：" + e.getMessage(), Toast.LENGTH_LONG).show());
+            } finally {
+                downloadInProgress = false;
+                runOnUiThread(() -> progressBar.setVisibility(View.GONE));
+            }
+        }).start();
     }
 
     private void downloadFile(URL url, File dest) throws IOException {
