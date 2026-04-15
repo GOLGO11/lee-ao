@@ -143,19 +143,14 @@ public class MainActivity extends Activity {
         toolbar.setPadding(dp(6), dp(6), dp(6), dp(6));
         toolbar.setBackgroundColor(Color.rgb(10, 10, 15));
 
-        toolbar.addView(toolbarButton("‹", v -> goBack()));
-        toolbar.addView(toolbarButton("首页", v -> webView.loadUrl(HOME_URL)));
-
         titleView = new TextView(this);
         titleView.setText("大李敖全集");
-        titleView.setTextColor(Color.rgb(232, 228, 220));
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setSingleLine(true);
-        toolbar.addView(titleView, new LinearLayout.LayoutParams(0, dp(42), 1));
 
-        toolbar.addView(toolbarButton("收藏", v -> toggleBookmark()));
-        toolbar.addView(toolbarButton("书签", v -> showBookmarks()));
-        toolbar.addView(toolbarButton("搜索", v -> showSearchBar()));
+        toolbar.addView(toolbarButton("返回", v -> goBack()), weightedToolbarParams());
+        toolbar.addView(toolbarButton("首页", v -> webView.loadUrl(HOME_URL)), weightedToolbarParams());
+        toolbar.addView(toolbarButton("收藏", v -> toggleBookmark()), weightedToolbarParams());
+        toolbar.addView(toolbarButton("书签", v -> showBookmarks()), weightedToolbarParams());
+        toolbar.addView(toolbarButton("搜索", v -> showSearchBar()), weightedToolbarParams());
 
         return toolbar;
     }
@@ -190,13 +185,16 @@ public class MainActivity extends Activity {
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setMinWidth(0);
         button.setMinHeight(0);
+        button.setMinimumWidth(0);
+        button.setMinimumHeight(0);
+        button.setIncludeFontPadding(false);
         button.setPadding(dp(8), 0, dp(8), 0);
         button.setOnClickListener(listener);
-        button.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(42)
-        ));
         return button;
+    }
+
+    private LinearLayout.LayoutParams weightedToolbarParams() {
+        return new LinearLayout.LayoutParams(0, dp(42), 1);
     }
 
     private boolean handleUrl(Uri uri) {

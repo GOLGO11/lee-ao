@@ -42,7 +42,7 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Build with mdBook
         run: mdbook build
-      - name: Apply PWA assets
+      - name: Generate app search index
         run: node scripts/apply-pwa.mjs book
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
