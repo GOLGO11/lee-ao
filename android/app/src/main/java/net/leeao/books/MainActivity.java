@@ -118,6 +118,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                hideSitePwaWidget();
                 injectReadingTracker();
                 saveLastUrl(url, view.getTitle());
             }
@@ -327,6 +328,17 @@ public class MainActivity extends Activity {
                 + "if(y>0)setTimeout(function(){window.scrollTo(0,y);},350);"
                 + "var t=null;window.addEventListener('scroll',function(){clearTimeout(t);t=setTimeout(save,300);},{passive:true});"
                 + "save();"
+                + "})();";
+        webView.evaluateJavascript(js, null);
+    }
+
+    private void hideSitePwaWidget() {
+        String js = "(function(){"
+                + "var style=document.getElementById('leeao-android-hide-pwa');"
+                + "if(!style){style=document.createElement('style');style.id='leeao-android-hide-pwa';"
+                + "style.textContent='.leeao-pwa-widget{display:none!important;}';document.head.appendChild(style);}"
+                + "function hide(){var el=document.querySelector('.leeao-pwa-widget');if(el)el.style.display='none';}"
+                + "hide();setTimeout(hide,500);setTimeout(hide,1500);"
                 + "})();";
         webView.evaluateJavascript(js, null);
     }

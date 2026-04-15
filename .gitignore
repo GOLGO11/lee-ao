@@ -4,3 +4,4 @@
 *.azw3
 node_modules/
 book/
+android/debug.keystore
