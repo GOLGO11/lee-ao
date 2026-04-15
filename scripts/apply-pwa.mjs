@@ -18,6 +18,7 @@ await copyPwaAssets();
 await writeManifest();
 await copyFile(path.join(pwaSourceDir, 'sw.js'), path.join(outputDir, 'sw.js'));
 await injectPwaTags();
+await writeSearchIndex();
 await writeOfflineManifest();
 
 async function copyPwaAssets() {
@@ -144,6 +145,86 @@ async function writeOfflineManifest() {
     `${JSON.stringify(manifest, null, 2)}\n`,
     'utf8'
   );
+}
+
+async function writeSearchIndex() {
+  const sourceFiles = (await listFiles(repoRoot))
+    .filter((file) => file.endsWith('.md'))
+    .filter((file) => !file.split(path.sep).some((part) => ['.git', 'book', 'android', 'node_modules', 'pwa', 'scripts'].includes(part)))
+    .filter((file) => file !== 'SUMMARY.md')
+    .sort((a, b) => a.localeCompare(b));
+
+  const docsDir = path.join(outputDir, 'search', 'docs');
+  await mkdir(docsDir, { recursive: true });
+
+  const docs = [];
+  for (let i = 0; i < sourceFiles.length; i += 1) {
+    const file = sourceFiles[i];
+    const markdown = await readFile(path.join(repoRoot, file), 'utf8');
+    const text = normalizeSearchText(markdown);
+    const docFile = `doc-${String(i + 1).padStart(4, '0')}.txt`;
+
+    await writeFile(path.join(docsDir, docFile), text, 'utf8');
+    docs.push({
+      title: getMarkdownTitle(markdown, file),
+      url: markdownToUrl(file),
+      text: `search/docs/${docFile}`,
+      size: text.length,
+    });
+  }
+
+  const hash = createHash('sha256');
+  for (const doc of docs) {
+    hash.update(doc.title);
+    hash.update('\0');
+    hash.update(doc.url);
+    hash.update('\0');
+    hash.update(String(doc.size));
+    hash.update('\0');
+  }
+
+  const manifest = {
+    version: hash.digest('hex').slice(0, 16),
+    generatedAt: new Date().toISOString(),
+    docs,
+  };
+
+  await mkdir(path.join(outputDir, 'search'), { recursive: true });
+  await writeFile(
+    path.join(outputDir, 'search', 'manifest.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+    'utf8'
+  );
+}
+
+function normalizeSearchText(markdown) {
+  return markdown
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[>*+-]\s+/gm, '')
+    .replace(/\|/g, ' ')
+    .replace(/[ \t\r\n]+/g, ' ')
+    .trim();
+}
+
+function getMarkdownTitle(markdown, file) {
+  const heading = markdown.match(/^#\s+(.+)$/m);
+  if (heading) return heading[1].trim();
+
+  const basename = path.basename(file, '.md');
+  return basename === 'README' ? path.basename(path.dirname(file)) : basename;
+}
+
+function markdownToUrl(file) {
+  if (file === 'README.md') return '.';
+  if (file.endsWith(`${path.sep}README.md`)) {
+    return `${toUrlPath(path.dirname(file))}/`;
+  }
+  return toUrlPath(file.replace(/\.md$/, '.html'));
 }
 
 async function copyDirectory(sourceDir, targetDir, shouldCopy = () => true) {

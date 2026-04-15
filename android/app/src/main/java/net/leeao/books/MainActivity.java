@@ -30,8 +30,15 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static final String HOME_URL = "https://books.leeao.net/";
@@ -47,6 +54,7 @@ public class MainActivity extends Activity {
     private TextView titleView;
     private LinearLayout searchBar;
     private EditText searchInput;
+    private volatile boolean searchInProgress = false;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -161,13 +169,13 @@ public class MainActivity extends Activity {
 
         searchInput = new EditText(this);
         searchInput.setSingleLine(true);
-        searchInput.setHint("搜索当前页面");
+        searchInput.setHint("搜索全集");
         searchInput.setTextColor(Color.rgb(232, 228, 220));
         searchInput.setHintTextColor(Color.rgb(160, 152, 136));
         bar.addView(searchInput, new LinearLayout.LayoutParams(0, dp(42), 1));
 
-        bar.addView(toolbarButton("查找", v -> findInPage()));
-        bar.addView(toolbarButton("下一个", v -> webView.findNext(true)));
+        bar.addView(toolbarButton("全集", v -> searchWholeSite()));
+        bar.addView(toolbarButton("本页", v -> findInPage()));
         bar.addView(toolbarButton("关闭", v -> hideSearchBar()));
 
         return bar;
@@ -220,6 +228,10 @@ public class MainActivity extends Activity {
     private void hideSearchBar() {
         webView.clearMatches();
         searchBar.setVisibility(View.GONE);
+        hideKeyboard();
+    }
+
+    private void hideKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
     }
@@ -232,6 +244,126 @@ public class MainActivity extends Activity {
         }
         webView.findAllAsync(query);
         webView.findNext(true);
+    }
+
+    private void searchWholeSite() {
+        String query = searchInput.getText().toString().trim();
+        if (query.isEmpty()) {
+            Toast.makeText(this, "请输入搜索内容", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (searchInProgress) {
+            Toast.makeText(this, "正在搜索，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        hideKeyboard();
+        searchInProgress = true;
+        Toast.makeText(this, "正在搜索全集...", Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            List<SearchResult> results = new ArrayList<>();
+            int searched = 0;
+            int total = 0;
+
+            try {
+                JSONObject manifest = new JSONObject(fetchText(new URL(new URL(HOME_URL), "search/manifest.json")));
+                JSONArray docs = manifest.getJSONArray("docs");
+                total = docs.length();
+                String needle = query.toLowerCase(Locale.ROOT);
+
+                for (int i = 0; i < docs.length() && results.size() < 80; i++) {
+                    JSONObject doc = docs.getJSONObject(i);
+                    searched += 1;
+
+                    String title = doc.optString("title");
+                    String docUrl = doc.optString("url");
+                    String textPath = doc.optString("text");
+                    String lowerTitle = title.toLowerCase(Locale.ROOT);
+                    boolean titleMatch = lowerTitle.contains(needle);
+
+                    String content = "";
+                    int contentIndex = -1;
+                    if (!textPath.isEmpty() && (!titleMatch || results.size() < 20)) {
+                        content = fetchText(new URL(new URL(HOME_URL), textPath));
+                        contentIndex = content.toLowerCase(Locale.ROOT).indexOf(needle);
+                    }
+
+                    if (titleMatch || contentIndex >= 0) {
+                        SearchResult result = new SearchResult();
+                        result.title = title.isEmpty() ? docUrl : title;
+                        result.url = new URL(new URL(HOME_URL), docUrl).toString();
+                        result.snippet = contentIndex >= 0
+                                ? makeSnippet(content, contentIndex, query.length())
+                                : "标题匹配";
+                        results.add(result);
+                    }
+                }
+
+                int finalSearched = searched;
+                int finalTotal = total;
+                runOnUiThread(() -> showSearchResults(query, results, finalSearched, finalTotal));
+            } catch (Exception error) {
+                runOnUiThread(() -> Toast.makeText(
+                        this,
+                        "搜索失败，请确认网络可用",
+                        Toast.LENGTH_LONG
+                ).show());
+            } finally {
+                searchInProgress = false;
+            }
+        }).start();
+    }
+
+    private void showSearchResults(String query, List<SearchResult> results, int searched, int total) {
+        if (results.isEmpty()) {
+            Toast.makeText(this, "没有找到：" + query, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String[] items = new String[results.size()];
+        for (int i = 0; i < results.size(); i++) {
+            SearchResult result = results.get(i);
+            items[i] = result.title + "\n" + result.snippet;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("搜索：" + query)
+                .setMessage("找到 " + results.size() + " 条结果，已搜索 " + searched + " / " + total + " 本。")
+                .setItems(items, (dialog, which) -> webView.loadUrl(results.get(which).url))
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private String fetchText(URL url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        connection.setRequestProperty("Accept", "application/json,text/plain,*/*");
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                connection.getInputStream(),
+                StandardCharsets.UTF_8
+        ))) {
+            StringBuilder builder = new StringBuilder();
+            char[] buffer = new char[8192];
+            int read;
+            while ((read = reader.read(buffer)) != -1) {
+                builder.append(buffer, 0, read);
+            }
+            return builder.toString();
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private String makeSnippet(String content, int index, int queryLength) {
+        int start = Math.max(0, index - 42);
+        int end = Math.min(content.length(), index + Math.max(queryLength, 1) + 70);
+        String snippet = content.substring(start, end).replaceAll("\\s+", " ").trim();
+        if (start > 0) snippet = "..." + snippet;
+        if (end < content.length()) snippet = snippet + "...";
+        return snippet;
     }
 
     private void toggleBookmark() {
@@ -413,6 +545,12 @@ public class MainActivity extends Activity {
         String title;
         String url;
         int scrollY;
+    }
+
+    private static class SearchResult {
+        String title;
+        String url;
+        String snippet;
     }
 
     private class ReaderBridge {
