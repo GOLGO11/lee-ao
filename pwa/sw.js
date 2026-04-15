@@ -1,27 +1,10 @@
-const VERSION = 'leeao-mdbook-pwa-v1';
+const VERSION = 'leeao-mdbook-pwa-v2';
 const SHELL_CACHE = `${VERSION}-shell`;
 const CONTENT_CACHE = 'leeao-mdbook-content-v1';
 const BASE_URL = new URL(self.registration.scope);
 
-const SHELL_FILES = [
-  '.',
-  'index.html',
-  'manifest.webmanifest',
-  'offline-files.json',
-  'pwa/pwa.css',
-  'pwa/pwa.js',
-  'pwa/icons/icon-192.png',
-  'pwa/icons/icon-512.png',
-  'pwa/icons/icon-maskable-512.png',
-  'pwa/icons/apple-touch-icon.png',
-];
-
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(SHELL_CACHE)
-      .then((cache) => cache.addAll(SHELL_FILES.map(toUrl)))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
