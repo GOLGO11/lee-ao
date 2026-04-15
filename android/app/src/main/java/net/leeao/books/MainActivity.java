@@ -257,7 +257,8 @@ public class MainActivity extends Activity {
 
         hideKeyboard();
         searchInProgress = true;
-        Toast.makeText(this, "正在搜索全集...", Toast.LENGTH_SHORT).show();
+        progressBar.setProgress(0);
+        progressBar.setVisibility(View.VISIBLE);
 
         new Thread(() -> {
             List<SearchResult> results = new ArrayList<>();
@@ -296,6 +297,11 @@ public class MainActivity extends Activity {
                                 : "标题匹配";
                         results.add(result);
                     }
+
+                    if (searched % 5 == 0 || searched == total) {
+                        int currentProgress = (searched * 100) / total;
+                        runOnUiThread(() -> progressBar.setProgress(currentProgress));
+                    }
                 }
 
                 int finalSearched = searched;
@@ -309,6 +315,7 @@ public class MainActivity extends Activity {
                 ).show());
             } finally {
                 searchInProgress = false;
+                runOnUiThread(() -> progressBar.setVisibility(View.GONE));
             }
         }).start();
     }
@@ -395,24 +402,65 @@ public class MainActivity extends Activity {
             return;
         }
 
-        String[] titles = new String[bookmarks.size()];
-        for (int i = 0; i < bookmarks.size(); i++) {
-            titles[i] = bookmarks.get(i).title;
-        }
+        LinearLayout listLayout = new LinearLayout(this);
+        listLayout.setOrientation(LinearLayout.VERTICAL);
+        listLayout.setPadding(dp(16), dp(16), dp(16), dp(16));
 
-        new AlertDialog.Builder(this)
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(this);
+        scrollView.addView(listLayout);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("收藏")
-                .setItems(titles, (dialog, which) -> {
-                    Bookmark bookmark = bookmarks.get(which);
-                    prefs.edit().putInt(scrollKey(bookmark.url), bookmark.scrollY).apply();
-                    webView.loadUrl(bookmark.url);
-                })
+                .setView(scrollView)
                 .setNegativeButton("关闭", null)
-                .setNeutralButton("清空收藏", (dialog, which) -> {
+                .setNeutralButton("清空收藏", (d, which) -> {
                     prefs.edit().remove(KEY_BOOKMARKS).apply();
                     Toast.makeText(this, "收藏已清空", Toast.LENGTH_SHORT).show();
                 })
-                .show();
+                .create();
+
+        for (int i = 0; i < bookmarks.size(); i++) {
+            Bookmark bookmark = bookmarks.get(i);
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(8), 0, dp(8));
+
+            TextView titleText = new TextView(this);
+            titleText.setText(bookmark.title);
+            titleText.setTextSize(16);
+            titleText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            titleText.setSingleLine(true);
+            LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+            row.addView(titleText, textParams);
+
+            Button openBtn = new Button(this);
+            openBtn.setText("打开");
+            openBtn.setOnClickListener(v -> {
+                prefs.edit().putInt(scrollKey(bookmark.url), bookmark.scrollY).apply();
+                webView.loadUrl(bookmark.url);
+                dialog.dismiss();
+            });
+            row.addView(openBtn, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            Button deleteBtn = new Button(this);
+            deleteBtn.setText("删除");
+            deleteBtn.setOnClickListener(v -> {
+                bookmarks.remove(bookmark);
+                writeBookmarks(bookmarks);
+                listLayout.removeView(row);
+                if (bookmarks.isEmpty()) {
+                    dialog.dismiss();
+                    Toast.makeText(this, "收藏已清空", Toast.LENGTH_SHORT).show();
+                }
+            });
+            row.addView(deleteBtn, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            listLayout.addView(row);
+        }
+
+        dialog.show();
     }
 
     private List<Bookmark> readBookmarks() {
