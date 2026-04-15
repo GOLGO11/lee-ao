@@ -125,12 +125,22 @@ public class MainActivity extends Activity {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                if (url.startsWith("https://books.leeao.net/data/")) {
+                if (url.startsWith("https://books.leeao.net/")) {
                     String path = request.getUrl().getPath();
+                    if (path == null || path.isEmpty() || path.equals("/")) {
+                        path = "/index.html";
+                    }
                     File localFile = new File(getFilesDir() + "/offline_data", path);
                     if (localFile.exists()) {
                         try {
-                            return new WebResourceResponse("application/json", "UTF-8", new FileInputStream(localFile));
+                            String mime = "text/html";
+                            if (path.endsWith(".css")) mime = "text/css";
+                            else if (path.endsWith(".js")) mime = "application/javascript";
+                            else if (path.endsWith(".json")) mime = "application/json";
+                            else if (path.endsWith(".svg")) mime = "image/svg+xml";
+                            else if (path.endsWith(".png")) mime = "image/png";
+                            else if (path.endsWith(".txt")) mime = "text/plain";
+                            return new WebResourceResponse(mime, "UTF-8", new FileInputStream(localFile));
                         } catch (Exception e) {
                             // ignore, fallback to network
                         }
@@ -373,31 +383,40 @@ public class MainActivity extends Activity {
                             File baseDir = new File(getFilesDir(), "offline_data");
                             if (!baseDir.exists()) baseDir.mkdirs();
 
-                            downloadFile(new URL(HOME_URL + "search/manifest.json"), new File(baseDir, "search/manifest.json"));
-
-                            File catalogFile = new File(baseDir, "data/catalog.json");
-                            if (!catalogFile.exists() || catalogFile.length() == 0) {
-                                downloadFile(new URL(HOME_URL + "data/catalog.json"), catalogFile);
+                            File manifestFile = new File(baseDir, "search/manifest.json");
+                            if (!manifestFile.exists() || manifestFile.length() == 0) {
+                                downloadFile(new URL(HOME_URL + "search/manifest.json"), manifestFile);
                             }
 
-                            String catalogText = fetchText(new URL(HOME_URL + "data/catalog.json"));
-                            JSONObject catalog = new JSONObject(catalogText);
-                            JSONArray categories = catalog.getJSONArray("categories");
+                            String manifestText = fetchText(new URL(HOME_URL + "search/manifest.json"));
+                            JSONObject manifest = new JSONObject(manifestText);
+                            JSONArray docs = manifest.getJSONArray("docs");
 
-                            List<String> downloadList = new ArrayList<>();
-                            for (int i = 0; i < categories.length(); i++) {
-                                JSONObject cat = categories.getJSONObject(i);
-                                String catId = cat.getString("id");
-                                JSONArray books = cat.getJSONArray("books");
-                                for (int j = 0; j < books.length(); j++) {
-                                    JSONObject book = books.getJSONObject(j);
-                                    String bookId = book.getString("id");
-                                    JSONArray chapters = book.getJSONArray("chapters");
-                                    for (int k = 0; k < chapters.length(); k++) {
-                                        JSONObject ch = chapters.getJSONObject(k);
-                                        String chId = ch.getString("id");
-                                        downloadList.add("data/" + catId + "/" + bookId + "/" + chId + ".json");
-                                    }
+                            List<String[]> downloadList = new ArrayList<>();
+                            
+                            downloadList.add(new String[]{"index.html", "index.html"});
+                            downloadList.add(new String[]{"css/variables.css", "css/variables.css"});
+                            downloadList.add(new String[]{"css/general.css", "css/general.css"});
+                            downloadList.add(new String[]{"css/chrome.css", "css/chrome.css"});
+                            downloadList.add(new String[]{"favicon.svg", "favicon.svg"});
+                            downloadList.add(new String[]{"favicon.png", "favicon.png"});
+                            downloadList.add(new String[]{"clipboard.min.js", "clipboard.min.js"});
+                            downloadList.add(new String[]{"highlight.js", "highlight.js"});
+                            downloadList.add(new String[]{"book.js", "book.js"});
+                            downloadList.add(new String[]{"elasticlunr.min.js", "elasticlunr.min.js"});
+                            downloadList.add(new String[]{"mark.min.js", "mark.min.js"});
+                            downloadList.add(new String[]{"searcher.js", "searcher.js"});
+
+                            for (int i = 0; i < docs.length(); i++) {
+                                JSONObject doc = docs.getJSONObject(i);
+                                String destUrl = doc.optString("url");
+                                if (destUrl != null && !destUrl.isEmpty()) {
+                                    String decodedPath = java.net.URLDecoder.decode(destUrl, "UTF-8");
+                                    downloadList.add(new String[]{destUrl, decodedPath});
+                                }
+                                String destText = doc.optString("text");
+                                if (destText != null && !destText.isEmpty()) {
+                                    downloadList.add(new String[]{destText, destText});
                                 }
                             }
 
@@ -405,12 +424,14 @@ public class MainActivity extends Activity {
                             AtomicInteger completed = new AtomicInteger(0);
                             ExecutorService executor = Executors.newFixedThreadPool(8);
 
-                            for (String path : downloadList) {
+                            for (String[] pair : downloadList) {
                                 executor.submit(() -> {
                                     try {
-                                        File f = new File(baseDir, path);
+                                        String dlPath = pair[0];
+                                        String localPath = pair[1].startsWith("/") ? pair[1].substring(1) : pair[1];
+                                        File f = new File(baseDir, localPath);
                                         if (!f.exists() || f.length() == 0) {
-                                            downloadFile(new URL(HOME_URL + path), f);
+                                            downloadFile(new URL(HOME_URL + dlPath), f);
                                         }
                                     } catch (Exception e) {
                                         // ignore failures, retry next time
