@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
     private LinearLayout searchBar;
     private EditText searchInput;
     private volatile boolean searchInProgress = false;
+    private String activeSearchQuery = null;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -129,6 +130,10 @@ public class MainActivity extends Activity {
                 hideSitePwaWidget();
                 injectReadingTracker();
                 saveLastUrl(url, view.getTitle());
+                if (activeSearchQuery != null) {
+                    view.findAllAsync(activeSearchQuery);
+                    activeSearchQuery = null;
+                }
             }
         });
 
@@ -333,9 +338,11 @@ public class MainActivity extends Activity {
         }
 
         new AlertDialog.Builder(this)
-                .setTitle("搜索：" + query)
-                .setMessage("找到 " + results.size() + " 条结果，已搜索 " + searched + " / " + total + " 本。")
-                .setItems(items, (dialog, which) -> webView.loadUrl(results.get(which).url))
+                .setTitle("搜索 \"" + query + "\" (找到 " + results.size() + " 条)")
+                .setItems(items, (dialog, which) -> {
+                    activeSearchQuery = query;
+                    webView.loadUrl(results.get(which).url);
+                })
                 .setNegativeButton("关闭", null)
                 .show();
     }
