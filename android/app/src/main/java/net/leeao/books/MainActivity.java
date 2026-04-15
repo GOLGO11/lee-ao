@@ -31,9 +31,17 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import android.webkit.WebResourceResponse;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -115,6 +123,23 @@ public class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("https://books.leeao.net/data/")) {
+                    String path = request.getUrl().getPath();
+                    File localFile = new File(getFilesDir() + "/offline_data", path);
+                    if (localFile.exists()) {
+                        try {
+                            return new WebResourceResponse("application/json", "UTF-8", new FileInputStream(localFile));
+                        } catch (Exception e) {
+                            // ignore, fallback to network
+                        }
+                    }
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 return handleUrl(request.getUrl());
             }
@@ -156,6 +181,7 @@ public class MainActivity extends Activity {
         toolbar.addView(toolbarButton("收藏", v -> toggleBookmark()), weightedToolbarParams());
         toolbar.addView(toolbarButton("书签", v -> showBookmarks()), weightedToolbarParams());
         toolbar.addView(toolbarButton("搜索", v -> showSearchBar()), weightedToolbarParams());
+        toolbar.addView(toolbarButton("离线", v -> downloadOfflineData()), weightedToolbarParams());
 
         return toolbar;
     }
@@ -325,6 +351,121 @@ public class MainActivity extends Activity {
         }).start();
     }
 
+    private volatile boolean downloadInProgress = false;
+
+    private void downloadOfflineData() {
+        if (downloadInProgress) {
+            Toast.makeText(this, "离线下载正在进行中", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("离线全集")
+                .setMessage("即将下载所有书籍内容（约 8700 个文件），以便无网络时阅读。可能需要几分钟，是否继续？")
+                .setPositiveButton("开始下载", (dialog, which) -> {
+                    downloadInProgress = true;
+                    progressBar.setProgress(0);
+                    progressBar.setVisibility(View.VISIBLE);
+                    titleView.setText("准备下载...");
+
+                    new Thread(() -> {
+                        try {
+                            File baseDir = new File(getFilesDir(), "offline_data");
+                            if (!baseDir.exists()) baseDir.mkdirs();
+
+                            downloadFile(new URL(HOME_URL + "search/manifest.json"), new File(baseDir, "search/manifest.json"));
+
+                            File catalogFile = new File(baseDir, "data/catalog.json");
+                            if (!catalogFile.exists() || catalogFile.length() == 0) {
+                                downloadFile(new URL(HOME_URL + "data/catalog.json"), catalogFile);
+                            }
+
+                            String catalogText = fetchText(new URL(HOME_URL + "data/catalog.json"));
+                            JSONObject catalog = new JSONObject(catalogText);
+                            JSONArray categories = catalog.getJSONArray("categories");
+
+                            List<String> downloadList = new ArrayList<>();
+                            for (int i = 0; i < categories.length(); i++) {
+                                JSONObject cat = categories.getJSONObject(i);
+                                String catId = cat.getString("id");
+                                JSONArray books = cat.getJSONArray("books");
+                                for (int j = 0; j < books.length(); j++) {
+                                    JSONObject book = books.getJSONObject(j);
+                                    String bookId = book.getString("id");
+                                    JSONArray chapters = book.getJSONArray("chapters");
+                                    for (int k = 0; k < chapters.length(); k++) {
+                                        JSONObject ch = chapters.getJSONObject(k);
+                                        String chId = ch.getString("id");
+                                        downloadList.add("data/" + catId + "/" + bookId + "/" + chId + ".json");
+                                    }
+                                }
+                            }
+
+                            int total = downloadList.size();
+                            AtomicInteger completed = new AtomicInteger(0);
+                            ExecutorService executor = Executors.newFixedThreadPool(8);
+
+                            for (String path : downloadList) {
+                                executor.submit(() -> {
+                                    try {
+                                        File f = new File(baseDir, path);
+                                        if (!f.exists() || f.length() == 0) {
+                                            downloadFile(new URL(HOME_URL + path), f);
+                                        }
+                                    } catch (Exception e) {
+                                        // ignore failures, retry next time
+                                    } finally {
+                                        int c = completed.incrementAndGet();
+                                        if (c % 10 == 0 || c == total) {
+                                            int progress = (c * 100) / total;
+                                            runOnUiThread(() -> {
+                                                progressBar.setProgress(progress);
+                                                titleView.setText("离线: " + c + "/" + total);
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+
+                            executor.shutdown();
+                            while (!executor.isTerminated()) {
+                                Thread.sleep(500);
+                            }
+
+                            runOnUiThread(() -> {
+                                Toast.makeText(this, "离线下载完成！", Toast.LENGTH_LONG).show();
+                                titleView.setText(trimTitle(webView.getTitle()));
+                            });
+
+                        } catch (Exception e) {
+                            runOnUiThread(() -> Toast.makeText(this, "离线下载失败：" + e.getMessage(), Toast.LENGTH_LONG).show());
+                        } finally {
+                            downloadInProgress = false;
+                            runOnUiThread(() -> progressBar.setVisibility(View.GONE));
+                        }
+                    }).start();
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void downloadFile(URL url, File dest) throws IOException {
+        dest.getParentFile().mkdirs();
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(30000);
+        try (InputStream in = connection.getInputStream();
+             FileOutputStream out = new FileOutputStream(dest)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
     private void showSearchResults(String query, List<SearchResult> results, int searched, int total) {
         if (results.isEmpty()) {
             Toast.makeText(this, "没有找到：" + query, Toast.LENGTH_LONG).show();
@@ -348,6 +489,24 @@ public class MainActivity extends Activity {
     }
 
     private String fetchText(URL url) throws IOException {
+        String urlString = url.toString();
+        if (urlString.startsWith("https://books.leeao.net/")) {
+            String path = url.getPath();
+            File localFile = new File(getFilesDir() + "/offline_data", path);
+            if (localFile.exists()) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        new FileInputStream(localFile), StandardCharsets.UTF_8))) {
+                    StringBuilder builder = new StringBuilder();
+                    char[] buffer = new char[8192];
+                    int read;
+                    while ((read = reader.read(buffer)) != -1) {
+                        builder.append(buffer, 0, read);
+                    }
+                    return builder.toString();
+                }
+            }
+        }
+
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(30000);
