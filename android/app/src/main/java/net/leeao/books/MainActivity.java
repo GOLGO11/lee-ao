@@ -10,6 +10,8 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -62,6 +64,12 @@ public class MainActivity extends Activity {
     private TextView titleView;
     private LinearLayout searchBar;
     private EditText searchInput;
+    private Button speechButton;
+    private TextToSpeech textToSpeech;
+    private boolean ttsReady = false;
+    private boolean speechActive = false;
+    private final List<String> speechChunks = new ArrayList<>();
+    private int speechIndex = 0;
     private volatile boolean searchInProgress = false;
     private String activeSearchQuery = null;
 
@@ -70,6 +78,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        initTextToSpeech();
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -160,6 +169,12 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                super.onPageStarted(view, url, favicon);
+                stopReadAloud(null);
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 hideSitePwaWidget();
@@ -191,7 +206,8 @@ public class MainActivity extends Activity {
         toolbar.addView(toolbarButton("收藏", v -> toggleBookmark()), weightedToolbarParams());
         toolbar.addView(toolbarButton("书签", v -> showBookmarks()), weightedToolbarParams());
         toolbar.addView(toolbarButton("搜索", v -> showSearchBar()), weightedToolbarParams());
-        toolbar.addView(toolbarButton("离线", v -> downloadOfflineData()), weightedToolbarParams());
+        speechButton = toolbarButton("朗读", v -> toggleReadAloud());
+        toolbar.addView(speechButton, weightedToolbarParams());
 
         return toolbar;
     }
@@ -273,6 +289,167 @@ public class MainActivity extends Activity {
     private void hideKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
+    }
+
+    private void initTextToSpeech() {
+        textToSpeech = new TextToSpeech(this, status -> {
+            if (status != TextToSpeech.SUCCESS) {
+                Toast.makeText(this, "语音引擎初始化失败", Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            int languageResult = textToSpeech.setLanguage(Locale.SIMPLIFIED_CHINESE);
+            if (languageResult == TextToSpeech.LANG_MISSING_DATA
+                    || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                textToSpeech.setLanguage(Locale.CHINESE);
+            }
+            textToSpeech.setSpeechRate(0.92f);
+            textToSpeech.setPitch(1.0f);
+            textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) {
+                }
+
+                @Override
+                public void onDone(String utteranceId) {
+                    runOnUiThread(() -> {
+                        if (speechActive) speakNextSpeechChunk();
+                    });
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    runOnUiThread(() -> stopReadAloud("朗读中断"));
+                }
+            });
+            ttsReady = true;
+        });
+    }
+
+    private void toggleReadAloud() {
+        if (speechActive) {
+            stopReadAloud("已停止朗读");
+            return;
+        }
+        startReadAloud();
+    }
+
+    private void startReadAloud() {
+        if (!ttsReady || textToSpeech == null) {
+            Toast.makeText(this, "语音引擎还在准备中，请稍后再试", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        saveCurrentProgress();
+        if (speechButton != null) speechButton.setText("准备");
+        webView.evaluateJavascript(readingTextScript(), value -> {
+            String text = decodeJavascriptString(value).trim();
+            List<String> chunks = splitSpeechText(text);
+            if (chunks.isEmpty()) {
+                if (speechButton != null) speechButton.setText("朗读");
+                Toast.makeText(this, "当前页面没有可朗读的正文", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            speechChunks.clear();
+            speechChunks.addAll(chunks);
+            speechIndex = 0;
+            speechActive = true;
+            if (speechButton != null) speechButton.setText("停止");
+            Toast.makeText(this, "开始朗读，可再次点击停止", Toast.LENGTH_SHORT).show();
+            speakNextSpeechChunk();
+        });
+    }
+
+    private void speakNextSpeechChunk() {
+        if (!speechActive || textToSpeech == null) return;
+        if (speechIndex >= speechChunks.size()) {
+            stopReadAloud(null);
+            Toast.makeText(this, "朗读完成", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String chunk = speechChunks.get(speechIndex);
+        speechIndex += 1;
+        Bundle params = new Bundle();
+        textToSpeech.speak(chunk, TextToSpeech.QUEUE_FLUSH, params, "leeao-" + speechIndex);
+    }
+
+    private void stopReadAloud(String message) {
+        speechActive = false;
+        speechChunks.clear();
+        speechIndex = 0;
+        if (textToSpeech != null) textToSpeech.stop();
+        if (speechButton != null) speechButton.setText("朗读");
+        if (message != null) Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    private String readingTextScript() {
+        return "(function(){"
+                + "function textOf(el){return (el.innerText||el.textContent||'').replace(/\\s+/g,' ').trim();}"
+                + "var root=document.querySelector('main')||document.querySelector('.content')||document.body;"
+                + "var nodes=Array.prototype.slice.call(root.querySelectorAll('h1,h2,h3,h4,p,li,blockquote,td,th,pre'));"
+                + "var picked=[];"
+                + "for(var i=0;i<nodes.length;i++){"
+                + "var el=nodes[i];"
+                + "var tag=(el.tagName||'').toLowerCase();"
+                + "if(el.closest('nav,script,style,button,.nav-chapters,.mobile-nav-chapters,.menu-bar,.chapter'))continue;"
+                + "var rect=el.getBoundingClientRect();"
+                + "if(rect.bottom<-20)continue;"
+                + "var text=textOf(el);"
+                + "if(text.length<2)continue;"
+                + "if((tag==='td'||tag==='th')&&text.length<8)continue;"
+                + "picked.push(text);"
+                + "}"
+                + "if(!picked.length)picked=[textOf(root)];"
+                + "return picked.join('\\n');"
+                + "})();";
+    }
+
+    private String decodeJavascriptString(String value) {
+        if (value == null || "null".equals(value)) return "";
+        try {
+            return new JSONArray("[" + value + "]").getString(0);
+        } catch (JSONException ignored) {
+            return value;
+        }
+    }
+
+    private List<String> splitSpeechText(String text) {
+        List<String> chunks = new ArrayList<>();
+        String normalized = text.replaceAll("\\s+", " ").trim();
+        if (normalized.isEmpty()) return chunks;
+
+        String[] sentences = normalized.split("(?<=[。！？!?；;])");
+        StringBuilder current = new StringBuilder();
+        for (String sentence : sentences) {
+            String part = sentence.trim();
+            if (part.isEmpty()) continue;
+            if (part.length() > 900) {
+                if (current.length() > 0) {
+                    chunks.add(current.toString());
+                    current.setLength(0);
+                }
+                splitLongSpeechPart(part, chunks);
+                continue;
+            }
+            if (current.length() + part.length() > 900) {
+                chunks.add(current.toString());
+                current.setLength(0);
+            }
+            current.append(part);
+        }
+        if (current.length() > 0) chunks.add(current.toString());
+        return chunks;
+    }
+
+    private void splitLongSpeechPart(String text, List<String> chunks) {
+        int start = 0;
+        while (start < text.length()) {
+            int end = Math.min(text.length(), start + 900);
+            chunks.add(text.substring(start, end));
+            start = end;
+        }
     }
 
     private void findInPage() {
@@ -752,6 +929,11 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        stopReadAloud(null);
+        if (textToSpeech != null) {
+            textToSpeech.shutdown();
+            textToSpeech = null;
+        }
         if (webView != null) {
             webView.destroy();
         }
