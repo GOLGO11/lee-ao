@@ -64,9 +64,10 @@ public class MainActivity extends Activity {
     private TextView titleView;
     private LinearLayout searchBar;
     private EditText searchInput;
-    private Button speechButton;
     private TextToSpeech textToSpeech;
     private boolean ttsReady = false;
+    private boolean ttsInitializing = false;
+    private boolean startSpeechWhenTtsReady = false;
     private boolean speechActive = false;
     private final List<String> speechChunks = new ArrayList<>();
     private int speechIndex = 0;
@@ -78,7 +79,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        initTextToSpeech();
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -204,12 +204,28 @@ public class MainActivity extends Activity {
         toolbar.addView(toolbarButton("返回", v -> goBack()), weightedToolbarParams());
         toolbar.addView(toolbarButton("首页", v -> webView.loadUrl(HOME_URL)), weightedToolbarParams());
         toolbar.addView(toolbarButton("收藏", v -> toggleBookmark()), weightedToolbarParams());
-        toolbar.addView(toolbarButton("书签", v -> showBookmarks()), weightedToolbarParams());
         toolbar.addView(toolbarButton("搜索", v -> showSearchBar()), weightedToolbarParams());
-        speechButton = toolbarButton("朗读", v -> toggleReadAloud());
-        toolbar.addView(speechButton, weightedToolbarParams());
+        toolbar.addView(toolbarButton("更多", v -> showMoreMenu()), weightedToolbarParams());
 
         return toolbar;
+    }
+
+    private void showMoreMenu() {
+        String readLabel = speechActive ? "停止朗读" : "朗读当前页";
+        String[] items = {"书签列表", readLabel, "离线下载"};
+        new AlertDialog.Builder(this)
+                .setTitle("更多")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        showBookmarks();
+                    } else if (which == 1) {
+                        toggleReadAloud();
+                    } else if (which == 2) {
+                        downloadOfflineData();
+                    }
+                })
+                .setNegativeButton("关闭", null)
+                .show();
     }
 
     private LinearLayout createSearchBar() {
@@ -292,16 +308,26 @@ public class MainActivity extends Activity {
     }
 
     private void initTextToSpeech() {
+        if (ttsReady || ttsInitializing) return;
+        ttsInitializing = true;
         textToSpeech = new TextToSpeech(this, status -> {
+            ttsInitializing = false;
             if (status != TextToSpeech.SUCCESS) {
-                Toast.makeText(this, "语音引擎初始化失败", Toast.LENGTH_LONG).show();
+                ttsReady = false;
+                startSpeechWhenTtsReady = false;
+                textToSpeech = null;
+                showTtsUnavailableDialog();
                 return;
             }
 
             int languageResult = textToSpeech.setLanguage(Locale.SIMPLIFIED_CHINESE);
             if (languageResult == TextToSpeech.LANG_MISSING_DATA
                     || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                textToSpeech.setLanguage(Locale.CHINESE);
+                int fallbackResult = textToSpeech.setLanguage(Locale.CHINESE);
+                if (fallbackResult == TextToSpeech.LANG_MISSING_DATA
+                        || fallbackResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Toast.makeText(this, "未找到中文语音包，将尝试使用系统默认语音", Toast.LENGTH_LONG).show();
+                }
             }
             textToSpeech.setSpeechRate(0.92f);
             textToSpeech.setPitch(1.0f);
@@ -323,7 +349,28 @@ public class MainActivity extends Activity {
                 }
             });
             ttsReady = true;
+            if (startSpeechWhenTtsReady) {
+                startSpeechWhenTtsReady = false;
+                startReadAloud();
+            }
         });
+    }
+
+    private void showTtsUnavailableDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("无法启动语音朗读")
+                .setMessage("这台手机当前没有可用的系统语音引擎，或语音引擎被禁用。请安装或启用 Android 文字转语音服务后再试。")
+                .setPositiveButton("安装语音包", (dialog, which) -> openTtsInstaller())
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private void openTtsInstaller() {
+        try {
+            startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA));
+        } catch (ActivityNotFoundException ignored) {
+            Toast.makeText(this, "无法打开语音包安装页面", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void toggleReadAloud() {
@@ -336,17 +383,17 @@ public class MainActivity extends Activity {
 
     private void startReadAloud() {
         if (!ttsReady || textToSpeech == null) {
-            Toast.makeText(this, "语音引擎还在准备中，请稍后再试", Toast.LENGTH_SHORT).show();
+            startSpeechWhenTtsReady = true;
+            initTextToSpeech();
+            Toast.makeText(this, "正在准备语音引擎", Toast.LENGTH_SHORT).show();
             return;
         }
 
         saveCurrentProgress();
-        if (speechButton != null) speechButton.setText("准备");
         webView.evaluateJavascript(readingTextScript(), value -> {
             String text = decodeJavascriptString(value).trim();
             List<String> chunks = splitSpeechText(text);
             if (chunks.isEmpty()) {
-                if (speechButton != null) speechButton.setText("朗读");
                 Toast.makeText(this, "当前页面没有可朗读的正文", Toast.LENGTH_SHORT).show();
                 return;
             }
@@ -355,8 +402,7 @@ public class MainActivity extends Activity {
             speechChunks.addAll(chunks);
             speechIndex = 0;
             speechActive = true;
-            if (speechButton != null) speechButton.setText("停止");
-            Toast.makeText(this, "开始朗读，可再次点击停止", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "开始朗读，可在更多里停止", Toast.LENGTH_SHORT).show();
             speakNextSpeechChunk();
         });
     }
@@ -380,7 +426,6 @@ public class MainActivity extends Activity {
         speechChunks.clear();
         speechIndex = 0;
         if (textToSpeech != null) textToSpeech.stop();
-        if (speechButton != null) speechButton.setText("朗读");
         if (message != null) Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
