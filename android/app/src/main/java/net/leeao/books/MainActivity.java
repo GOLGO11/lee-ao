@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -57,6 +58,7 @@ public class MainActivity extends Activity {
     private static final String KEY_LAST_URL = "last_url";
     private static final String KEY_LAST_TITLE = "last_title";
     private static final String KEY_BOOKMARKS = "bookmarks";
+    private static final String KEY_TTS_ENGINE = "tts_engine";
 
     private SharedPreferences prefs;
     private WebView webView;
@@ -68,6 +70,9 @@ public class MainActivity extends Activity {
     private boolean ttsReady = false;
     private boolean ttsInitializing = false;
     private boolean startSpeechWhenTtsReady = false;
+    private int ttsEngineAttempt = 0;
+    private final List<String> ttsEngineCandidates = new ArrayList<>();
+    private final List<String> failedTtsEngines = new ArrayList<>();
     private boolean speechActive = false;
     private final List<String> speechChunks = new ArrayList<>();
     private int speechIndex = 0;
@@ -212,7 +217,7 @@ public class MainActivity extends Activity {
 
     private void showMoreMenu() {
         String readLabel = speechActive ? "停止朗读" : "朗读当前页";
-        String[] items = {"书签列表", readLabel, "离线下载"};
+        String[] items = {"书签列表", readLabel, "语音引擎", "离线下载"};
         new AlertDialog.Builder(this)
                 .setTitle("更多")
                 .setItems(items, (dialog, which) -> {
@@ -221,6 +226,8 @@ public class MainActivity extends Activity {
                     } else if (which == 1) {
                         toggleReadAloud();
                     } else if (which == 2) {
+                        showTtsEngineMenu();
+                    } else if (which == 3) {
                         downloadOfflineData();
                     }
                 })
@@ -310,57 +317,182 @@ public class MainActivity extends Activity {
     private void initTextToSpeech() {
         if (ttsReady || ttsInitializing) return;
         ttsInitializing = true;
-        textToSpeech = new TextToSpeech(this, status -> {
+        ttsEngineAttempt = 0;
+        failedTtsEngines.clear();
+        ttsEngineCandidates.clear();
+        ttsEngineCandidates.addAll(buildTtsEngineCandidates());
+        tryNextTtsEngine();
+    }
+
+    private void tryNextTtsEngine() {
+        if (ttsEngineAttempt >= ttsEngineCandidates.size()) {
             ttsInitializing = false;
-            if (status != TextToSpeech.SUCCESS) {
-                ttsReady = false;
-                startSpeechWhenTtsReady = false;
-                textToSpeech = null;
-                showTtsUnavailableDialog();
-                return;
+            ttsReady = false;
+            startSpeechWhenTtsReady = false;
+            releaseTextToSpeech();
+            showTtsUnavailableDialog();
+            return;
+        }
+
+        String enginePackage = ttsEngineCandidates.get(ttsEngineAttempt);
+        ttsEngineAttempt += 1;
+        if (textToSpeech != null) {
+            textToSpeech.shutdown();
+            textToSpeech = null;
+        }
+
+        if (enginePackage == null) {
+            textToSpeech = new TextToSpeech(this, status -> handleTtsInit(status, null));
+        } else {
+            textToSpeech = new TextToSpeech(this, status -> handleTtsInit(status, enginePackage), enginePackage);
+        }
+    }
+
+    private void handleTtsInit(int status, String enginePackage) {
+        if (status != TextToSpeech.SUCCESS || textToSpeech == null) {
+            failedTtsEngines.add(engineLabel(enginePackage));
+            tryNextTtsEngine();
+            return;
+        }
+
+        int languageResult = textToSpeech.setLanguage(Locale.SIMPLIFIED_CHINESE);
+        if (languageResult == TextToSpeech.LANG_MISSING_DATA
+                || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+            int fallbackResult = textToSpeech.setLanguage(Locale.CHINESE);
+            if (fallbackResult == TextToSpeech.LANG_MISSING_DATA
+                    || fallbackResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Toast.makeText(this, "未找到中文语音包，将尝试使用该引擎默认语音", Toast.LENGTH_LONG).show();
+            }
+        }
+        textToSpeech.setSpeechRate(0.92f);
+        textToSpeech.setPitch(1.0f);
+        textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override
+            public void onStart(String utteranceId) {
             }
 
-            int languageResult = textToSpeech.setLanguage(Locale.SIMPLIFIED_CHINESE);
-            if (languageResult == TextToSpeech.LANG_MISSING_DATA
-                    || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                int fallbackResult = textToSpeech.setLanguage(Locale.CHINESE);
-                if (fallbackResult == TextToSpeech.LANG_MISSING_DATA
-                        || fallbackResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Toast.makeText(this, "未找到中文语音包，将尝试使用系统默认语音", Toast.LENGTH_LONG).show();
-                }
+            @Override
+            public void onDone(String utteranceId) {
+                runOnUiThread(() -> {
+                    if (speechActive) speakNextSpeechChunk();
+                });
             }
-            textToSpeech.setSpeechRate(0.92f);
-            textToSpeech.setPitch(1.0f);
-            textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override
-                public void onStart(String utteranceId) {
-                }
 
-                @Override
-                public void onDone(String utteranceId) {
-                    runOnUiThread(() -> {
-                        if (speechActive) speakNextSpeechChunk();
-                    });
-                }
-
-                @Override
-                public void onError(String utteranceId) {
-                    runOnUiThread(() -> stopReadAloud("朗读中断"));
-                }
-            });
-            ttsReady = true;
-            if (startSpeechWhenTtsReady) {
-                startSpeechWhenTtsReady = false;
-                startReadAloud();
+            @Override
+            public void onError(String utteranceId) {
+                runOnUiThread(() -> stopReadAloud("朗读中断"));
             }
         });
+        ttsInitializing = false;
+        ttsReady = true;
+        if (enginePackage != null) {
+            prefs.edit().putString(KEY_TTS_ENGINE, enginePackage).apply();
+        }
+        if (startSpeechWhenTtsReady) {
+            startSpeechWhenTtsReady = false;
+            startReadAloud();
+        }
+    }
+
+    private List<String> buildTtsEngineCandidates() {
+        List<String> engines = new ArrayList<>();
+        String preferred = prefs.getString(KEY_TTS_ENGINE, "");
+        if (preferred != null && !preferred.isEmpty()) {
+            engines.add(preferred);
+        }
+
+        Intent intent = new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE);
+        List<ResolveInfo> services = getPackageManager().queryIntentServices(intent, 0);
+        for (ResolveInfo info : services) {
+            if (info.serviceInfo == null) continue;
+            String packageName = info.serviceInfo.packageName;
+            if (packageName != null && !engines.contains(packageName)) {
+                engines.add(packageName);
+            }
+        }
+
+        engines.add(null);
+        return engines;
+    }
+
+    private void showTtsEngineMenu() {
+        List<String> packages = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        packages.add(null);
+        labels.add("系统默认");
+
+        Intent intent = new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE);
+        List<ResolveInfo> services = getPackageManager().queryIntentServices(intent, 0);
+        for (ResolveInfo info : services) {
+            if (info.serviceInfo == null) continue;
+            String packageName = info.serviceInfo.packageName;
+            if (packageName == null || packages.contains(packageName)) continue;
+            packages.add(packageName);
+            labels.add(info.loadLabel(getPackageManager()) + "\n" + packageName);
+        }
+
+        if (packages.size() == 1) {
+            showTtsUnavailableDialog();
+            return;
+        }
+
+        String saved = prefs.getString(KEY_TTS_ENGINE, "");
+        String[] items = new String[labels.size()];
+        for (int i = 0; i < labels.size(); i++) {
+            String packageName = packages.get(i);
+            boolean current = packageName == null
+                    ? saved == null || saved.isEmpty()
+                    : packageName.equals(saved);
+            items[i] = labels.get(i) + (current ? "  当前" : "");
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("语音引擎")
+                .setItems(items, (dialog, which) -> {
+                    String selected = packages.get(which);
+                    if (selected == null) {
+                        prefs.edit().remove(KEY_TTS_ENGINE).apply();
+                    } else {
+                        prefs.edit().putString(KEY_TTS_ENGINE, selected).apply();
+                    }
+                    releaseTextToSpeech();
+                    Toast.makeText(this, "语音引擎已切换，请再点朗读", Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton("安装语音包", (dialog, which) -> openTtsInstaller())
+                .setNegativeButton("关闭", null)
+                .show();
+    }
+
+    private String engineLabel(String enginePackage) {
+        if (enginePackage == null) return "系统默认";
+        Intent intent = new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE);
+        intent.setPackage(enginePackage);
+        List<ResolveInfo> services = getPackageManager().queryIntentServices(intent, 0);
+        if (!services.isEmpty()) {
+            CharSequence label = services.get(0).loadLabel(getPackageManager());
+            if (label != null) return label + " (" + enginePackage + ")";
+        }
+        return enginePackage;
+    }
+
+    private void releaseTextToSpeech() {
+        ttsReady = false;
+        ttsInitializing = false;
+        if (textToSpeech != null) {
+            textToSpeech.shutdown();
+            textToSpeech = null;
+        }
     }
 
     private void showTtsUnavailableDialog() {
+        String failed = failedTtsEngines.isEmpty()
+                ? ""
+                : "\n\n已尝试：" + android.text.TextUtils.join("、", failedTtsEngines);
         new AlertDialog.Builder(this)
                 .setTitle("无法启动语音朗读")
-                .setMessage("这台手机当前没有可用的系统语音引擎，或语音引擎被禁用。请安装或启用 Android 文字转语音服务后再试。")
-                .setPositiveButton("安装语音包", (dialog, which) -> openTtsInstaller())
+                .setMessage("没有可用的 Android 系统文字转语音引擎，或当前引擎初始化失败。可以先在这里选择讯飞，再回到朗读重试。" + failed)
+                .setPositiveButton("选择引擎", (dialog, which) -> showTtsEngineMenu())
+                .setNeutralButton("安装语音包", (dialog, which) -> openTtsInstaller())
                 .setNegativeButton("关闭", null)
                 .show();
     }
