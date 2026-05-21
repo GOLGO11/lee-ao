@@ -1,0 +1,78 @@
+.leeao-language-toggle {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  margin: 0 6px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--fg, #333) 22%, transparent);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  vertical-align: middle;
+}
+
+.leeao-language-toggle button {
+  box-sizing: border-box;
+  min-width: 32px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fg, #333);
+  cursor: pointer;
+  font: 600 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.leeao-language-toggle button + button {
+  border-left: 1px solid color-mix(in srgb, var(--fg, #333) 16%, transparent);
+}
+
+.leeao-language-toggle button:hover,
+.leeao-language-toggle button:focus-visible {
+  background: color-mix(in srgb, var(--fg, #333) 9%, transparent);
+  outline: none;
+}
+
+.leeao-language-toggle button[aria-pressed="true"] {
+  background: var(--fg, #333);
+  color: var(--bg, #fff);
+}
+
+.leeao-language-toggle.is-busy {
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.leeao-language-toggle--floating {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 1000;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 14%);
+}
+
+@supports not (color: color-mix(in srgb, #000 50%, transparent)) {
+  .leeao-language-toggle,
+  .leeao-language-toggle button + button {
+    border-color: rgba(127, 127, 127, 0.36);
+  }
+
+  .leeao-language-toggle button:hover,
+  .leeao-language-toggle button:focus-visible {
+    background: rgba(127, 127, 127, 0.16);
+  }
+}
+
+@media (max-width: 480px) {
+  .leeao-language-toggle {
+    height: 26px;
+    margin: 0 4px;
+  }
+
+  .leeao-language-toggle button {
+    min-width: 28px;
+    height: 24px;
+    padding: 0 7px;
+    font-size: 12px;
+  }
+}
