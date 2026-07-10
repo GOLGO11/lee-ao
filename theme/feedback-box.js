@@ -2,14 +2,25 @@
   "use strict";
 
   var RECIPIENT = "zzy951642853@gmail.com";
-  var FORM_ENDPOINT = "https://formsubmit.co/ajax/" + RECIPIENT;
-  var MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-  var SUBMIT_TIMEOUT = 15000;
+  var RESPONSE_CHANNEL = "leeao-feedback-apps-script";
+  var CLIENT_CONFIG = window.LEEAO_FEEDBACK_CONFIG || {};
+  var FORM_ENDPOINT = String(CLIENT_CONFIG.endpoint || "").trim();
+  var MAX_ATTACHMENT_SIZE = positiveNumber(
+    CLIENT_CONFIG.maxAttachmentBytes,
+    5 * 1024 * 1024
+  );
+  var SUBMIT_TIMEOUT = positiveNumber(CLIENT_CONFIG.responseTimeoutMs, 30000);
   var dialog = null;
   var form = null;
   var status = null;
   var submitButton = null;
   var fallbackButton = null;
+  var openedAt = Date.now();
+
+  function positiveNumber(value, fallback) {
+    var number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : fallback;
+  }
 
   function onReady(callback) {
     if (document.readyState === "loading") {
@@ -19,7 +30,7 @@
     }
   }
 
-  function element(tagName, attributes, text) {
+  function element(tagName, attributes, textContent) {
     var node = document.createElement(tagName);
     Object.keys(attributes || {}).forEach(function (name) {
       if (name === "className") {
@@ -28,16 +39,14 @@
         node.setAttribute(name, attributes[name]);
       }
     });
-    if (text) node.textContent = text;
+    if (textContent) node.textContent = textContent;
     return node;
   }
 
   function field(labelText, control, optionalText) {
     var wrapper = element("label", { className: "feedback-field" });
     var label = element("span", { className: "feedback-field__label" }, labelText);
-    if (optionalText) {
-      label.appendChild(element("small", {}, optionalText));
-    }
+    if (optionalText) label.appendChild(element("small", {}, optionalText));
     wrapper.appendChild(label);
     wrapper.appendChild(control);
     return wrapper;
@@ -53,12 +62,16 @@
   }
 
   function updatePageContext() {
-    form.elements["页面标题"].value = currentPageTitle();
-    form.elements["页面地址"].value = window.location.href;
+    form.elements.pageTitle.value = currentPageTitle();
+    form.elements.pageUrl.value = window.location.href;
   }
 
   function isTraditional() {
     return document.documentElement.dataset.leeaoScript === "traditional";
+  }
+
+  function text(simplified, traditional) {
+    return isTraditional() ? traditional : simplified;
   }
 
   function setStatus(message, isError) {
@@ -66,8 +79,10 @@
     status.classList.toggle("is-error", Boolean(isError));
   }
 
-  function text(simplified, traditional) {
-    return isTraditional() ? traditional : simplified;
+  function endpointIsConfigured() {
+    return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:[?#].*)?$/.test(
+      FORM_ENDPOINT
+    );
   }
 
   function validateAttachment() {
@@ -77,18 +92,16 @@
 
     var hasSupportedType = /^image\/(png|jpeg)$/.test(file.type);
     var hasSupportedExtension = /\.(png|jpe?g)$/i.test(file.name);
-    if (!hasSupportedType && !hasSupportedExtension) {
-      setStatus(
-        isTraditional() ? "請上傳 PNG 或 JPG 圖片。" : "请上传 PNG 或 JPG 图片。",
-        true
-      );
+    if (!hasSupportedType || !hasSupportedExtension) {
+      setStatus(text("请上传 PNG 或 JPG 图片。", "請上傳 PNG 或 JPG 圖片。"), true);
       input.value = "";
       return false;
     }
 
     if (file.size > MAX_ATTACHMENT_SIZE) {
+      var maxMb = Math.floor(MAX_ATTACHMENT_SIZE / 1024 / 1024);
       setStatus(
-        isTraditional() ? "圖片不能超過 10MB。" : "图片不能超过 10MB。",
+        text("图片不能超过 " + maxMb + "MB。", "圖片不能超過 " + maxMb + "MB。"),
         true
       );
       input.value = "";
@@ -108,38 +121,44 @@
   }
 
   function openDialog() {
+    openedAt = Date.now();
     updatePageContext();
     setStatus("");
     fallbackButton.hidden = true;
+
+    if (!endpointIsConfigured()) {
+      fallbackButton.hidden = false;
+      setStatus(
+        text(
+          "意见箱服务尚未完成部署，请暂时使用邮件发送。",
+          "意見箱服務尚未完成部署，請暫時使用郵件傳送。"
+        ),
+        true
+      );
+    }
+
     if (typeof dialog.showModal === "function") {
       dialog.showModal();
     } else {
       dialog.setAttribute("open", "");
     }
-    form.elements["意见内容"].focus();
+    form.elements.message.focus();
   }
 
   function createForm() {
-    form = element("form", {
-      className: "feedback-form",
-      action: FORM_ENDPOINT,
-      method: "POST",
-      enctype: "multipart/form-data"
-    });
-
-    form.appendChild(hiddenInput("_subject", "大李敖全集网站意见"));
-    form.appendChild(hiddenInput("_template", "table"));
-    form.appendChild(hiddenInput("页面标题", ""));
-    form.appendChild(hiddenInput("页面地址", ""));
+    form = element("form", { className: "feedback-form" });
+    form.appendChild(hiddenInput("pageTitle", ""));
+    form.appendChild(hiddenInput("pageUrl", ""));
     form.appendChild(element("input", {
       className: "feedback-honey",
       type: "text",
-      name: "_honey",
+      name: "website",
       tabindex: "-1",
-      autocomplete: "off"
+      autocomplete: "off",
+      "aria-hidden": "true"
     }));
 
-    var typeSelect = element("select", { name: "意见类型" });
+    var typeSelect = element("select", { name: "feedbackType" });
     ["内容纠错", "排版或跳转问题", "功能建议", "其他"].forEach(function (value) {
       typeSelect.appendChild(element("option", { value: value }, value));
     });
@@ -147,7 +166,7 @@
 
     form.appendChild(field("称呼", element("input", {
       type: "text",
-      name: "称呼",
+      name: "name",
       maxlength: "80",
       autocomplete: "name"
     }), "（可选）"));
@@ -161,7 +180,7 @@
     }), "（可选）"));
 
     form.appendChild(field("意见内容", element("textarea", {
-      name: "意见内容",
+      name: "message",
       rows: "7",
       maxlength: "5000",
       required: "",
@@ -174,7 +193,12 @@
       accept: "image/png,image/jpeg"
     });
     attachment.addEventListener("change", validateAttachment);
-    form.appendChild(field("添加图片", attachment, "（可选，PNG/JPG，最大 10MB）"));
+    var maxMb = Math.floor(MAX_ATTACHMENT_SIZE / 1024 / 1024);
+    form.appendChild(field(
+      "添加图片",
+      attachment,
+      "（可选，PNG/JPG，最大 " + maxMb + "MB）"
+    ));
 
     status = element("p", {
       className: "feedback-status",
@@ -184,9 +208,14 @@
     form.appendChild(status);
 
     var actions = element("div", { className: "feedback-actions" });
-    var cancel = element("button", { type: "button", className: "feedback-button feedback-button--secondary" }, "取消");
+    var cancel = element(
+      "button",
+      { type: "button", className: "feedback-button feedback-button--secondary" },
+      "取消"
+    );
     cancel.addEventListener("click", closeDialog);
     actions.appendChild(cancel);
+
     fallbackButton = element("button", {
       type: "button",
       className: "feedback-button feedback-button--mail",
@@ -194,15 +223,14 @@
     }, "改用邮件发送");
     fallbackButton.addEventListener("click", sendWithMailClient);
     actions.appendChild(fallbackButton);
+
     submitButton = element("button", {
       type: "submit",
       className: "feedback-button feedback-button--primary"
     }, "提交意见");
     actions.appendChild(submitButton);
     form.appendChild(actions);
-
     form.addEventListener("submit", submitFeedback);
-
     return form;
   }
 
@@ -211,78 +239,164 @@
     updatePageContext();
     if (!validateAttachment()) return;
 
+    if (!endpointIsConfigured()) {
+      fallbackButton.hidden = false;
+      setStatus(
+        text(
+          "意见箱服务尚未完成部署，请暂时使用邮件发送。",
+          "意見箱服務尚未完成部署，請暫時使用郵件傳送。"
+        ),
+        true
+      );
+      return;
+    }
+
     fallbackButton.hidden = true;
     submitButton.disabled = true;
     submitButton.textContent = text("正在提交…", "正在提交…");
     setStatus(text("正在发送意见……", "正在傳送意見……"));
 
-    var controller = new AbortController();
-    var timeout = window.setTimeout(function () {
-      controller.abort();
-    }, SUBMIT_TIMEOUT);
-
     try {
-      var response = await fetch(FORM_ENDPOINT, {
-        method: "POST",
-        body: new FormData(form),
-        headers: { Accept: "application/json" },
-        signal: controller.signal
-      });
-      var result = null;
-      try {
-        result = await response.json();
-      } catch (error) {
-        // Cloudflare error pages are HTML, so a JSON parse failure is expected.
-      }
-
-      if (!response.ok || (result && (result.success === false || result.success === "false"))) {
-        var submitError = new Error("Feedback service returned HTTP " + response.status);
-        submitError.status = response.status;
-        throw submitError;
-      }
+      var payload = await buildPayload();
+      var result = await postToAppsScript(payload);
+      if (!result.ok) throw feedbackError(result.message);
 
       form.reset();
+      openedAt = Date.now();
       updatePageContext();
       setStatus(text("意见已发送，谢谢！", "意見已傳送，謝謝！"));
     } catch (error) {
-      console.warn("[leeao] 意见箱在线提交失败：", error);
+      console.warn("[leeao] 意见箱提交失败：", error);
       showMailFallback(error);
     } finally {
-      window.clearTimeout(timeout);
       submitButton.disabled = false;
       submitButton.textContent = text("提交意见", "提交意見");
     }
   }
 
+  async function buildPayload() {
+    var file = form.elements.attachment.files && form.elements.attachment.files[0];
+    var now = Date.now();
+    return {
+      version: 1,
+      submissionId: createSubmissionId(),
+      pageOrigin: window.location.origin || "null",
+      pageTitle: form.elements.pageTitle.value,
+      pageUrl: form.elements.pageUrl.value,
+      feedbackType: form.elements.feedbackType.value,
+      name: form.elements.name.value.trim(),
+      email: form.elements.email.value.trim(),
+      message: form.elements.message.value.trim(),
+      website: form.elements.website.value,
+      openedAt: openedAt,
+      submittedAt: now,
+      attachment: file ? await serializeAttachment(file) : null
+    };
+  }
+
+  function createSubmissionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  }
+
+  async function serializeAttachment(file) {
+    var bytes = new Uint8Array(await file.arrayBuffer());
+    return {
+      name: file.name,
+      type: file.type,
+      size: bytes.byteLength,
+      data: toBase64(bytes)
+    };
+  }
+
+  function postToAppsScript(payload) {
+    return new Promise(function (resolve, reject) {
+      var frameName = "leeao-feedback-" + payload.submissionId.replace(/[^a-z0-9-]/gi, "");
+      var iframe = element("iframe", {
+        className: "feedback-transport",
+        name: frameName,
+        title: "",
+        tabindex: "-1",
+        "aria-hidden": "true"
+      });
+      var transport = element("form", {
+        className: "feedback-transport",
+        action: FORM_ENDPOINT,
+        method: "POST",
+        target: frameName
+      });
+      transport.appendChild(hiddenInput("payload", JSON.stringify(payload)));
+
+      var settled = false;
+      var timeout = window.setTimeout(function () {
+        finish();
+        reject(feedbackError(text(
+          "服务未在规定时间内返回确认，请稍后重试。",
+          "服務未在規定時間內返回確認，請稍後重試。"
+        )));
+      }, SUBMIT_TIMEOUT);
+
+      function onMessage(event) {
+        var data = event.data;
+        if (!data || data.channel !== RESPONSE_CHANNEL) return;
+        if (data.submissionId !== payload.submissionId) return;
+        finish();
+        resolve(data);
+      }
+
+      function finish() {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        window.setTimeout(function () {
+          iframe.remove();
+          transport.remove();
+        }, 0);
+      }
+
+      window.addEventListener("message", onMessage);
+      document.body.appendChild(iframe);
+      document.body.appendChild(transport);
+      transport.submit();
+    });
+  }
+
+  function feedbackError(message) {
+    var error = new Error(message || "Feedback submission failed.");
+    error.userMessage = message;
+    return error;
+  }
+
   function showMailFallback(error) {
     var file = form.elements.attachment.files && form.elements.attachment.files[0];
-    var reason = error && error.status
-      ? "HTTP " + error.status
-      : text("连接超时或服务不可用", "連線逾時或服務不可用");
-
     fallbackButton.textContent = file
       ? text("生成带图片邮件", "產生附圖郵件")
       : text("改用邮件发送", "改用郵件傳送");
     fallbackButton.hidden = false;
     setStatus(
-      text(
-        "在线提交失败（" + reason + "），请使用备用邮件方式。",
-        "線上提交失敗（" + reason + "），請使用備用郵件方式。"
-      ),
+      error && error.userMessage
+        ? error.userMessage
+        : text(
+          "在线提交失败，请使用备用邮件方式。",
+          "線上提交失敗，請使用備用郵件方式。"
+        ),
       true
     );
   }
 
   function feedbackBody() {
     return [
-      "意见类型：" + form.elements["意见类型"].value,
-      "称呼：" + (form.elements["称呼"].value.trim() || "未填写"),
+      "意见类型：" + form.elements.feedbackType.value,
+      "称呼：" + (form.elements.name.value.trim() || "未填写"),
       "回复邮箱：" + (form.elements.email.value.trim() || "未填写"),
-      "页面标题：" + form.elements["页面标题"].value,
-      "页面地址：" + form.elements["页面地址"].value,
+      "页面标题：" + form.elements.pageTitle.value,
+      "页面地址：" + form.elements.pageUrl.value,
       "",
       "意见内容：",
-      form.elements["意见内容"].value.trim()
+      form.elements.message.value.trim()
     ].join("\r\n");
   }
 
@@ -344,10 +458,7 @@
 
     var blob = new Blob([message], { type: "message/rfc822;charset=utf-8" });
     var url = URL.createObjectURL(blob);
-    var link = element("a", {
-      href: url,
-      download: "大李敖全集网站意见.eml"
-    });
+    var link = element("a", { href: url, download: "大李敖全集网站意见.eml" });
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -370,7 +481,8 @@
   }
 
   function foldBase64(value) {
-    return value.match(/.{1,76}/g).join("\r\n");
+    var lines = value.match(/.{1,76}/g);
+    return lines ? lines.join("\r\n") : "";
   }
 
   function mountFeedbackBox() {
@@ -395,7 +507,10 @@
       document.body.appendChild(openButton);
     }
 
-    dialog = element("dialog", { className: "feedback-dialog", "aria-labelledby": "feedback-title" });
+    dialog = element("dialog", {
+      className: "feedback-dialog",
+      "aria-labelledby": "feedback-title"
+    });
     var header = element("div", { className: "feedback-dialog__header" });
     header.appendChild(element("h2", { id: "feedback-title" }, "意见箱"));
     var close = element("button", {
