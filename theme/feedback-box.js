@@ -56,16 +56,6 @@
     return element("input", { type: "hidden", name: name, value: value });
   }
 
-  function currentPageTitle() {
-    var heading = document.querySelector("main h1, .content h1");
-    return heading ? heading.textContent.trim() : document.title;
-  }
-
-  function updatePageContext() {
-    form.elements.pageTitle.value = currentPageTitle();
-    form.elements.pageUrl.value = window.location.href;
-  }
-
   function isTraditional() {
     return document.documentElement.dataset.leeaoScript === "traditional";
   }
@@ -122,7 +112,6 @@
 
   function openDialog() {
     openedAt = Date.now();
-    updatePageContext();
     setStatus("");
     fallbackButton.hidden = true;
 
@@ -147,8 +136,6 @@
 
   function createForm() {
     form = element("form", { className: "feedback-form" });
-    form.appendChild(hiddenInput("pageTitle", ""));
-    form.appendChild(hiddenInput("pageUrl", ""));
     form.appendChild(element("input", {
       className: "feedback-honey",
       type: "text",
@@ -236,7 +223,6 @@
 
   async function submitFeedback(event) {
     event.preventDefault();
-    updatePageContext();
     if (!validateAttachment()) return;
 
     if (!endpointIsConfigured()) {
@@ -263,7 +249,6 @@
 
       form.reset();
       openedAt = Date.now();
-      updatePageContext();
       setStatus(text("意见已发送，谢谢！", "意見已傳送，謝謝！"));
     } catch (error) {
       console.warn("[leeao] 意见箱提交失败：", error);
@@ -281,8 +266,6 @@
       version: 1,
       submissionId: createSubmissionId(),
       pageOrigin: window.location.origin || "null",
-      pageTitle: form.elements.pageTitle.value,
-      pageUrl: form.elements.pageUrl.value,
       feedbackType: form.elements.feedbackType.value,
       name: form.elements.name.value.trim(),
       email: form.elements.email.value.trim(),
@@ -392,8 +375,6 @@
       "意见类型：" + form.elements.feedbackType.value,
       "称呼：" + (form.elements.name.value.trim() || "未填写"),
       "回复邮箱：" + (form.elements.email.value.trim() || "未填写"),
-      "页面标题：" + form.elements.pageTitle.value,
-      "页面地址：" + form.elements.pageUrl.value,
       "",
       "意见内容：",
       form.elements.message.value.trim()
@@ -401,7 +382,6 @@
   }
 
   async function sendWithMailClient() {
-    updatePageContext();
     var file = form.elements.attachment.files && form.elements.attachment.files[0];
 
     try {

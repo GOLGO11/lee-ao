@@ -95,8 +95,6 @@ function validatePayload_(payload, submissionId) {
     name: optionalText_(payload.name, 80),
     email: email,
     message: requiredText_(payload.message, "意见内容", 5000),
-    pageTitle: optionalText_(payload.pageTitle, 300) || "未获取",
-    pageUrl: optionalText_(payload.pageUrl, 1500) || "未获取",
     attachment: decodeAttachment_(payload.attachment)
   };
 }
@@ -195,8 +193,6 @@ function sendFeedbackEmail_(feedback) {
     "意见类型：" + feedback.feedbackType,
     "称呼：" + (feedback.name || "未填写"),
     "回复邮箱：" + (feedback.email || "未填写"),
-    "页面标题：" + feedback.pageTitle,
-    "页面地址：" + feedback.pageUrl,
     "提交编号：" + feedback.submissionId,
     "",
     "意见内容：",
@@ -205,8 +201,7 @@ function sendFeedbackEmail_(feedback) {
 
   var options = {
     to: CONFIG.RECIPIENT,
-    subject: "[大李敖全集意见箱][" + feedback.feedbackType + "] " +
-      feedback.pageTitle.slice(0, 60),
+    subject: "[大李敖全集意见箱][" + feedback.feedbackType + "]",
     body: lines.join("\n"),
     htmlBody: buildHtmlBody_(feedback),
     name: "大李敖全集意见箱"
@@ -221,8 +216,6 @@ function buildHtmlBody_(feedback) {
     ["意见类型", feedback.feedbackType],
     ["称呼", feedback.name || "未填写"],
     ["回复邮箱", feedback.email || "未填写"],
-    ["页面标题", feedback.pageTitle],
-    ["页面地址", feedback.pageUrl],
     ["提交编号", feedback.submissionId]
   ].map(function (row) {
     return "<tr><th style=\"padding:6px 10px;text-align:left;vertical-align:top;" +
