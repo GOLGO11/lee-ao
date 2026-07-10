@@ -12,11 +12,13 @@ var CONFIG = Object.freeze({
 });
 
 var RESPONSE_CHANNEL = "leeao-feedback-apps-script";
+var SERVICE_VERSION = "2026-07-10-no-page-context";
 
 function doGet() {
   return HtmlService.createHtmlOutput(
     "<!doctype html><meta charset=\"utf-8\"><title>意见箱服务</title>" +
-    "<p>大李敖全集意见箱服务已启动。</p>"
+    "<p>大李敖全集意见箱服务已启动。</p>" +
+    "<p>服务版本：" + SERVICE_VERSION + "</p>"
   );
 }
 
@@ -235,7 +237,8 @@ function response_(submissionId, ok, message, targetOrigin) {
     channel: RESPONSE_CHANNEL,
     submissionId: submissionId,
     ok: ok,
-    message: message
+    message: message,
+    serviceVersion: SERVICE_VERSION
   }).replace(/</g, "\\u003c");
   var origin = JSON.stringify(targetOrigin || "*");
   var html = "<!doctype html><meta charset=\"utf-8\"><script>" +
