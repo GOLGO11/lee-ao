@@ -2,10 +2,14 @@
   "use strict";
 
   var RECIPIENT = "zzy951642853@gmail.com";
+  var FORM_ENDPOINT = "https://formsubmit.co/ajax/" + RECIPIENT;
   var MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+  var SUBMIT_TIMEOUT = 15000;
   var dialog = null;
   var form = null;
   var status = null;
+  var submitButton = null;
+  var fallbackButton = null;
 
   function onReady(callback) {
     if (document.readyState === "loading") {
@@ -62,6 +66,10 @@
     status.classList.toggle("is-error", Boolean(isError));
   }
 
+  function text(simplified, traditional) {
+    return isTraditional() ? traditional : simplified;
+  }
+
   function validateAttachment() {
     var input = form.elements.attachment;
     var file = input.files && input.files[0];
@@ -102,6 +110,7 @@
   function openDialog() {
     updatePageContext();
     setStatus("");
+    fallbackButton.hidden = true;
     if (typeof dialog.showModal === "function") {
       dialog.showModal();
     } else {
@@ -113,11 +122,9 @@
   function createForm() {
     form = element("form", {
       className: "feedback-form",
-      action: "https://formsubmit.co/" + RECIPIENT,
+      action: FORM_ENDPOINT,
       method: "POST",
-      enctype: "multipart/form-data",
-      target: "_blank",
-      rel: "noopener"
+      enctype: "multipart/form-data"
     });
 
     form.appendChild(hiddenInput("_subject", "大李敖全集网站意见"));
@@ -180,21 +187,190 @@
     var cancel = element("button", { type: "button", className: "feedback-button feedback-button--secondary" }, "取消");
     cancel.addEventListener("click", closeDialog);
     actions.appendChild(cancel);
-    actions.appendChild(element("button", { type: "submit", className: "feedback-button feedback-button--primary" }, "提交意见"));
+    fallbackButton = element("button", {
+      type: "button",
+      className: "feedback-button feedback-button--mail",
+      hidden: ""
+    }, "改用邮件发送");
+    fallbackButton.addEventListener("click", sendWithMailClient);
+    actions.appendChild(fallbackButton);
+    submitButton = element("button", {
+      type: "submit",
+      className: "feedback-button feedback-button--primary"
+    }, "提交意见");
+    actions.appendChild(submitButton);
     form.appendChild(actions);
 
-    form.addEventListener("submit", function (event) {
-      updatePageContext();
-      if (!validateAttachment()) {
-        event.preventDefault();
-        return;
-      }
-      setStatus(
-        isTraditional() ? "正在打開提交頁面……" : "正在打开提交页面……"
-      );
-    });
+    form.addEventListener("submit", submitFeedback);
 
     return form;
+  }
+
+  async function submitFeedback(event) {
+    event.preventDefault();
+    updatePageContext();
+    if (!validateAttachment()) return;
+
+    fallbackButton.hidden = true;
+    submitButton.disabled = true;
+    submitButton.textContent = text("正在提交…", "正在提交…");
+    setStatus(text("正在发送意见……", "正在傳送意見……"));
+
+    var controller = new AbortController();
+    var timeout = window.setTimeout(function () {
+      controller.abort();
+    }, SUBMIT_TIMEOUT);
+
+    try {
+      var response = await fetch(FORM_ENDPOINT, {
+        method: "POST",
+        body: new FormData(form),
+        headers: { Accept: "application/json" },
+        signal: controller.signal
+      });
+      var result = null;
+      try {
+        result = await response.json();
+      } catch (error) {
+        // Cloudflare error pages are HTML, so a JSON parse failure is expected.
+      }
+
+      if (!response.ok || (result && (result.success === false || result.success === "false"))) {
+        var submitError = new Error("Feedback service returned HTTP " + response.status);
+        submitError.status = response.status;
+        throw submitError;
+      }
+
+      form.reset();
+      updatePageContext();
+      setStatus(text("意见已发送，谢谢！", "意見已傳送，謝謝！"));
+    } catch (error) {
+      console.warn("[leeao] 意见箱在线提交失败：", error);
+      showMailFallback(error);
+    } finally {
+      window.clearTimeout(timeout);
+      submitButton.disabled = false;
+      submitButton.textContent = text("提交意见", "提交意見");
+    }
+  }
+
+  function showMailFallback(error) {
+    var file = form.elements.attachment.files && form.elements.attachment.files[0];
+    var reason = error && error.status
+      ? "HTTP " + error.status
+      : text("连接超时或服务不可用", "連線逾時或服務不可用");
+
+    fallbackButton.textContent = file
+      ? text("生成带图片邮件", "產生附圖郵件")
+      : text("改用邮件发送", "改用郵件傳送");
+    fallbackButton.hidden = false;
+    setStatus(
+      text(
+        "在线提交失败（" + reason + "），请使用备用邮件方式。",
+        "線上提交失敗（" + reason + "），請使用備用郵件方式。"
+      ),
+      true
+    );
+  }
+
+  function feedbackBody() {
+    return [
+      "意见类型：" + form.elements["意见类型"].value,
+      "称呼：" + (form.elements["称呼"].value.trim() || "未填写"),
+      "回复邮箱：" + (form.elements.email.value.trim() || "未填写"),
+      "页面标题：" + form.elements["页面标题"].value,
+      "页面地址：" + form.elements["页面地址"].value,
+      "",
+      "意见内容：",
+      form.elements["意见内容"].value.trim()
+    ].join("\r\n");
+  }
+
+  async function sendWithMailClient() {
+    updatePageContext();
+    var file = form.elements.attachment.files && form.elements.attachment.files[0];
+
+    try {
+      if (file) {
+        await downloadEmailDraft(file);
+        setStatus(text(
+          "已生成带图片的邮件草稿，请打开下载的 .eml 文件并点击发送。",
+          "已產生附圖的郵件草稿，請開啟下載的 .eml 檔案並點擊傳送。"
+        ));
+      } else {
+        var mailto = "mailto:" + RECIPIENT
+          + "?subject=" + encodeURIComponent("大李敖全集网站意见")
+          + "&body=" + encodeURIComponent(feedbackBody());
+        window.location.href = mailto;
+        setStatus(text(
+          "已打开邮件客户端，请确认后发送。",
+          "已開啟郵件程式，請確認後傳送。"
+        ));
+      }
+    } catch (error) {
+      console.warn("[leeao] 生成备用邮件失败：", error);
+      setStatus(text(
+        "无法打开邮件客户端，请将意见直接发送到 " + RECIPIENT + "。",
+        "無法開啟郵件程式，請將意見直接傳送到 " + RECIPIENT + "。"
+      ), true);
+    }
+  }
+
+  async function downloadEmailDraft(file) {
+    var boundary = "----leeao-feedback-" + Date.now().toString(36);
+    var subject = "大李敖全集网站意见";
+    var attachment = new Uint8Array(await file.arrayBuffer());
+    var message = [
+      "To: " + RECIPIENT,
+      "Subject: " + encodedHeader(subject),
+      "MIME-Version: 1.0",
+      "X-Unsent: 1",
+      "Content-Type: multipart/mixed; boundary=\"" + boundary + "\"",
+      "",
+      "--" + boundary,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      foldBase64(toBase64(new TextEncoder().encode(feedbackBody()))),
+      "--" + boundary,
+      "Content-Type: " + (file.type || "application/octet-stream"),
+      "Content-Transfer-Encoding: base64",
+      "Content-Disposition: attachment; filename*=UTF-8''" + encodeURIComponent(file.name),
+      "",
+      foldBase64(toBase64(attachment)),
+      "--" + boundary + "--",
+      ""
+    ].join("\r\n");
+
+    var blob = new Blob([message], { type: "message/rfc822;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var link = element("a", {
+      href: url,
+      download: "大李敖全集网站意见.eml"
+    });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  function encodedHeader(value) {
+    return "=?UTF-8?B?" + toBase64(new TextEncoder().encode(value)) + "?=";
+  }
+
+  function toBase64(bytes) {
+    var binary = "";
+    var chunkSize = 0x8000;
+    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  function foldBase64(value) {
+    return value.match(/.{1,76}/g).join("\r\n");
   }
 
   function mountFeedbackBox() {

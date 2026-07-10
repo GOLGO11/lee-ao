@@ -162,6 +162,7 @@
 
 .feedback-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
 }
@@ -184,6 +185,17 @@
   border: 1px solid #12679f;
   background: #1677b8;
   color: #fff;
+}
+
+.feedback-button--mail {
+  border: 1px solid #7a4f00;
+  background: #8a5a00;
+  color: #fff;
+}
+
+.feedback-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .feedback-button:hover,
@@ -225,5 +237,10 @@
   .feedback-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .feedback-button--mail:not([hidden]) {
+    grid-column: 1 / -1;
+    grid-row: 1;
   }
 }
