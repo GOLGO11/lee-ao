@@ -14,8 +14,8 @@ command = "mdbook-open-on-gh"
 renderer = ["html"]
 
 [output.html]
-additional-css = ["theme/language-toggle.css"]
-additional-js = ["theme/language-toggle.js"]
+additional-css = ["theme/language-toggle.css", "theme/feedback-box.css"]
+additional-js = ["theme/language-toggle.js", "theme/feedback-box.js"]
 git-repository-url = "https://golgo11.github.io/lee-ao"
 git-branch = "master"
 

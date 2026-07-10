@@ -1,0 +1,229 @@
+.feedback-open-button {
+  box-sizing: border-box;
+  height: 28px;
+  margin: 0 4px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--fg, #333) 22%, transparent);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  color: var(--fg, #333);
+  cursor: pointer;
+  font: 600 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.feedback-open-button:hover,
+.feedback-open-button:focus-visible {
+  background: color-mix(in srgb, var(--fg, #333) 9%, transparent);
+  outline: none;
+}
+
+.feedback-open-button--floating {
+  position: fixed;
+  top: 92px;
+  right: 16px;
+  z-index: 1000;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 14%);
+}
+
+.feedback-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  padding: 0;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--fg, #333) 18%, transparent);
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  color: var(--fg, #333);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 28%);
+}
+
+.feedback-dialog::backdrop {
+  background: rgb(0 0 0 / 48%);
+}
+
+.feedback-dialog__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 16px 0 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg, #333) 14%, transparent);
+  background: var(--bg, #fff);
+}
+
+.feedback-dialog__header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.feedback-dialog__close {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg, #333);
+  cursor: pointer;
+  font: 400 26px/1 system-ui, sans-serif;
+}
+
+.feedback-dialog__close:hover,
+.feedback-dialog__close:focus-visible {
+  background: color-mix(in srgb, var(--fg, #333) 9%, transparent);
+  outline: none;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 15px;
+  padding: 20px;
+}
+
+.feedback-field {
+  display: grid;
+  gap: 7px;
+}
+
+.feedback-field__label {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.feedback-field__label small {
+  margin-left: 5px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.68;
+}
+
+.feedback-field input,
+.feedback-field select,
+.feedback-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--fg, #333) 24%, transparent);
+  border-radius: 5px;
+  background: var(--bg, #fff);
+  color: var(--fg, #333);
+  font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.feedback-field input,
+.feedback-field select {
+  min-height: 40px;
+  padding: 7px 10px;
+}
+
+.feedback-field input[type="file"] {
+  padding: 6px;
+}
+
+.feedback-field textarea {
+  min-height: 150px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.feedback-field input:focus,
+.feedback-field select:focus,
+.feedback-field textarea:focus {
+  border-color: #1677b8;
+  outline: 2px solid rgb(22 119 184 / 20%);
+  outline-offset: 1px;
+}
+
+.feedback-honey {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.feedback-status {
+  min-height: 20px;
+  margin: 0;
+  color: #197243;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.feedback-status.is-error {
+  color: #b42318;
+}
+
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.feedback-button {
+  min-height: 38px;
+  padding: 7px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font: 600 14px/1.2 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.feedback-button--secondary {
+  border: 1px solid color-mix(in srgb, var(--fg, #333) 24%, transparent);
+  background: transparent;
+  color: var(--fg, #333);
+}
+
+.feedback-button--primary {
+  border: 1px solid #12679f;
+  background: #1677b8;
+  color: #fff;
+}
+
+.feedback-button:hover,
+.feedback-button:focus-visible {
+  filter: brightness(0.94);
+  outline: 2px solid rgb(22 119 184 / 22%);
+  outline-offset: 2px;
+}
+
+@supports not (color: color-mix(in srgb, #000 50%, transparent)) {
+  .feedback-open-button,
+  .feedback-dialog,
+  .feedback-dialog__header,
+  .feedback-field input,
+  .feedback-field select,
+  .feedback-field textarea,
+  .feedback-button--secondary {
+    border-color: rgba(127, 127, 127, 0.36);
+  }
+}
+
+@media (max-width: 600px) {
+  .feedback-open-button {
+    height: 26px;
+    padding: 0 7px;
+    font-size: 12px;
+  }
+
+  .feedback-dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .feedback-form {
+    gap: 13px;
+    padding: 16px;
+  }
+
+  .feedback-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}

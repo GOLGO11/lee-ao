@@ -6,6 +6,7 @@ import { TextDecoder } from 'node:util';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sourceDir = path.join(repoRoot, '《大李敖全集6.0》合集');
 const decoder = new TextDecoder('gb18030');
+const utf8Decoder = new TextDecoder('utf-8');
 
 const categories = [
   ['01.自传回忆类', 1, 8],
@@ -37,6 +38,12 @@ const titleOverrides = new Map([
   [114, '大江大海骗了你'],
 ]);
 
+const bodyHeadingOverrides = new Map([
+  [163, new Map([
+    ['乌克兰女同志问李敖：有没有被男人或女人强暴的经历', '乌克兰女同志问李敖：有没有被男人或女人强暴的经历（5biao）'],
+  ])],
+]);
+
 if (sourceFiles.length !== 195) {
   throw new Error(`Expected 195 source books, found ${sourceFiles.length}`);
 }
@@ -62,10 +69,14 @@ for (const category of categories) {
 const books = sourceFiles.map((sourceFile, index) => {
   const number = index + 1;
   const sourcePath = path.join(sourceDir, sourceFile);
-  const sourceText = decoder.decode(readFileSync(sourcePath))
+  const sourceText = decodeSource(readFileSync(sourcePath), number)
     .replace(/^\uFEFF/, '')
     .replace(/\r\n?/g, '\n');
-  const parsed = convertBook(sourceText, titleOverrides.get(number));
+  const parsed = convertBook(
+    sourceText,
+    titleOverrides.get(number),
+    bodyHeadingOverrides.get(number),
+  );
   const category = categories.find((entry) => number >= entry.start && number <= entry.end);
   const fileName = `${sanitizeFileName(parsed.title)}.md`;
   const targetPath = path.join(repoRoot, category.name, fileName);
@@ -85,7 +96,26 @@ updateBookToml();
 
 console.log(`Imported ${books.length} books into ${categories.length} categories.`);
 
-function convertBook(sourceText, titleOverride) {
+function decodeSource(buffer, number) {
+  if (number !== 165) return decoder.decode(buffer);
+
+  // This source contains one UTF-8 section inside an otherwise GB18030 file.
+  const startMarker = Buffer.from('2023年11月FB', 'utf8');
+  const nextHeadingMarker = Buffer.from('\r\n\r\n2023', 'ascii');
+  const utf8Start = buffer.indexOf(startMarker);
+  const boundary = buffer.indexOf(nextHeadingMarker, utf8Start + startMarker.length);
+
+  if (utf8Start === -1 || boundary === -1) return decoder.decode(buffer);
+
+  const suffixStart = boundary + Buffer.byteLength('\r\n\r\n');
+  return [
+    decoder.decode(buffer.subarray(0, utf8Start)),
+    utf8Decoder.decode(buffer.subarray(utf8Start, suffixStart)),
+    decoder.decode(buffer.subarray(suffixStart)),
+  ].join('');
+}
+
+function convertBook(sourceText, titleOverride, headingOverrides = new Map()) {
   const lines = sourceText.split('\n');
   const firstLineIndex = lines.findIndex((line) => line.trim());
   if (firstLineIndex === -1) throw new Error('Empty source book');
@@ -114,8 +144,13 @@ function convertBook(sourceText, titleOverride) {
 
   for (const line of bodyLines) {
     const trimmed = line.trim();
-    if (trimmed && headingsToConvert.has(trimmed) && !/^[\s\u3000]/.test(line)) {
-      output.push(`## ${trimmed}`);
+    const overriddenHeading = headingOverrides.get(trimmed);
+    if (
+      trimmed &&
+      (overriddenHeading || headingsToConvert.has(trimmed)) &&
+      !/^[\s\u3000]/.test(line)
+    ) {
+      output.push(`## ${overriddenHeading || trimmed}`);
     } else {
       output.push(normalizeIndent(line));
     }
