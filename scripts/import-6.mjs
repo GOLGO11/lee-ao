@@ -44,6 +44,10 @@ const bodyHeadingOverrides = new Map([
   ])],
 ]);
 
+const extraBodyHeadingPatterns = new Map([
+  [36, /^第\d+幕——审判/],
+]);
+
 if (sourceFiles.length !== 195) {
   throw new Error(`Expected 195 source books, found ${sourceFiles.length}`);
 }
@@ -76,6 +80,7 @@ const books = sourceFiles.map((sourceFile, index) => {
     sourceText,
     titleOverrides.get(number),
     bodyHeadingOverrides.get(number),
+    extraBodyHeadingPatterns.get(number),
   );
   const category = categories.find((entry) => number >= entry.start && number <= entry.end);
   const fileName = `${sanitizeFileName(parsed.title)}.md`;
@@ -115,7 +120,12 @@ function decodeSource(buffer, number) {
   ].join('');
 }
 
-function convertBook(sourceText, titleOverride, headingOverrides = new Map()) {
+function convertBook(
+  sourceText,
+  titleOverride,
+  headingOverrides = new Map(),
+  extraBodyHeadingPattern = null,
+) {
   const lines = sourceText.split('\n');
   const firstLineIndex = lines.findIndex((line) => line.trim());
   if (firstLineIndex === -1) throw new Error('Empty source book');
@@ -128,8 +138,16 @@ function convertBook(sourceText, titleOverride, headingOverrides = new Map()) {
   const bodyLines = lines.slice(bodyStart);
   const bodyHeadings = collectBodyHeadings(bodyLines);
   const headingPlan = planHeadings(catalog.items, bodyHeadings);
-  const headingsToConvert = new Set(headingPlan.bodyHeadings);
-  const tocItems = headingPlan.tocItems.length > 0 ? headingPlan.tocItems : catalog.items;
+  const extraBodyHeadings = extraBodyHeadingPattern
+    ? bodyHeadings.filter((heading) => extraBodyHeadingPattern.test(heading))
+    : [];
+  const headingsToConvert = new Set([
+    ...headingPlan.bodyHeadings,
+    ...extraBodyHeadings,
+  ]);
+  const tocItems = extraBodyHeadings.length > 0
+    ? bodyHeadings.filter((heading) => headingsToConvert.has(heading))
+    : (headingPlan.tocItems.length > 0 ? headingPlan.tocItems : catalog.items);
 
   const output = [`# ${title}`, ''];
   if (tocItems.length > 0) {
