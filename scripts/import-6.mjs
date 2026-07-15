@@ -48,6 +48,23 @@ const extraBodyHeadingPatterns = new Map([
   [36, /^第\d+幕——审判/],
 ]);
 
+const sourceTextCorrections = new Map([
+  [92, [[
+    '苏联并没有斥化到英国，可是苏联的确斥化了中国。',
+    '苏联并没有赤化到英国，可是苏联的确赤化了中国。',
+  ]]],
+]);
+
+const excludedTocItems = new Map([
+  [87, new Set(['《李敖大哥大》简介'])],
+]);
+
+const tocSlugOverrides = new Map([
+  [163, new Map([
+    ['六个自了汉（Jeff Ao）', '六个自了汉jeff-ao'],
+  ])],
+]);
+
 if (sourceFiles.length !== 195) {
   throw new Error(`Expected 195 source books, found ${sourceFiles.length}`);
 }
@@ -73,14 +90,16 @@ for (const category of categories) {
 const books = sourceFiles.map((sourceFile, index) => {
   const number = index + 1;
   const sourcePath = path.join(sourceDir, sourceFile);
-  const sourceText = decodeSource(readFileSync(sourcePath), number)
+  const sourceText = applySourceTextCorrections(decodeSource(readFileSync(sourcePath), number)
     .replace(/^\uFEFF/, '')
-    .replace(/\r\n?/g, '\n');
+    .replace(/\r\n?/g, '\n'), sourceTextCorrections.get(number));
   const parsed = convertBook(
     sourceText,
     titleOverrides.get(number),
     bodyHeadingOverrides.get(number),
     extraBodyHeadingPatterns.get(number),
+    excludedTocItems.get(number),
+    tocSlugOverrides.get(number),
   );
   const category = categories.find((entry) => number >= entry.start && number <= entry.end);
   const fileName = `${sanitizeFileName(parsed.title)}.md`;
@@ -120,11 +139,22 @@ function decodeSource(buffer, number) {
   ].join('');
 }
 
+function applySourceTextCorrections(sourceText, corrections = []) {
+  return corrections.reduce((text, [from, to]) => {
+    if (!text.includes(from)) {
+      throw new Error(`Source correction target not found: ${from}`);
+    }
+    return text.replace(from, to);
+  }, sourceText);
+}
+
 function convertBook(
   sourceText,
   titleOverride,
   headingOverrides = new Map(),
   extraBodyHeadingPattern = null,
+  tocExclusions = new Set(),
+  slugOverrides = new Map(),
 ) {
   const lines = sourceText.split('\n');
   const firstLineIndex = lines.findIndex((line) => line.trim());
@@ -145,13 +175,14 @@ function convertBook(
     ...headingPlan.bodyHeadings,
     ...extraBodyHeadings,
   ]);
-  const tocItems = extraBodyHeadings.length > 0
+  const tocItems = (extraBodyHeadings.length > 0
     ? bodyHeadings.filter((heading) => headingsToConvert.has(heading))
-    : (headingPlan.tocItems.length > 0 ? headingPlan.tocItems : catalog.items);
+    : (headingPlan.tocItems.length > 0 ? headingPlan.tocItems : catalog.items))
+    .filter((item) => !tocExclusions.has(item));
 
   const output = [`# ${title}`, ''];
   if (tocItems.length > 0) {
-    output.push(...buildBookToc(tocItems), '');
+    output.push(...buildBookToc(tocItems, slugOverrides), '');
   }
   if (introLines.length > 0) {
     output.push(...introLines.map(normalizeIndent), '');
@@ -357,19 +388,19 @@ function levenshtein(a, b) {
   return previous[b.length];
 }
 
-function buildBookToc(items) {
+function buildBookToc(items, slugOverrides = new Map()) {
   const seen = new Map();
   return [
     '- [目录](#目录)',
     ...items.map((item) => {
-      const slug = uniqueSlug(item, seen);
+      const slug = uniqueSlug(item, seen, slugOverrides.get(item));
       return `  * [${item}](#${slug})`;
     }),
   ];
 }
 
-function uniqueSlug(heading, seen) {
-  const base = slugify(heading) || 'section';
+function uniqueSlug(heading, seen, slugOverride) {
+  const base = slugOverride || slugify(heading) || 'section';
   const count = seen.get(base) || 0;
   seen.set(base, count + 1);
   return count === 0 ? base : `${base}-${count}`;
