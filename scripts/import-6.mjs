@@ -61,6 +61,9 @@ const excludedTocItems = new Map([
 
 const tocSlugOverrides = new Map([
   [163, new Map([
+    ['桀骜有话说（Jeff Ao）', '桀骜有话说jeff-ao'],
+    ['再见啦李敖（Jeff Ao）', '再见啦李敖jeff-ao'],
+    ['写在5.0发布前（Jeff Ao）', '写在50发布前jeff-ao'],
     ['六个自了汉（Jeff Ao）', '六个自了汉jeff-ao'],
   ])],
 ]);
