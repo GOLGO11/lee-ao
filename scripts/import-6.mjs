@@ -45,10 +45,17 @@ const bodyHeadingOverrides = new Map([
 ]);
 
 const extraBodyHeadingPatterns = new Map([
+  [7, /^.+$/],
   [36, /^第\d+幕——审判/],
 ]);
 
+const strictBodyHeadingContextBooks = new Set([7]);
+
 const sourceTextCorrections = new Map([
+  [56, [[
+    '　　李敖研究网：http://leeao.startlogic.com/bbs/forum.php陆晋德译《飞鸟集》序',
+    '　　李敖研究网：http://leeao.startlogic.com/bbs/forum.php\n\n陆晋德译《飞鸟集》序',
+  ]]],
   [92, [[
     '苏联并没有斥化到英国，可是苏联的确斥化了中国。',
     '苏联并没有赤化到英国，可是苏联的确赤化了中国。',
@@ -57,9 +64,32 @@ const sourceTextCorrections = new Map([
 
 const excludedTocItems = new Map([
   [87, new Set(['《李敖大哥大》简介'])],
+  [108, new Set(['《胡适评传》《蒋介石研究集》为其代表作。'])],
 ]);
 
 const tocSlugOverrides = new Map([
+  [52, new Map([
+    ['何来John Samuelson！', '何来john-samuelson'],
+  ])],
+  [57, new Map([
+    ['给他来个“Seven Down”！', '给他来个seven-down'],
+  ])],
+  [88, new Map([
+    ['635.2006-08-11：The buck stops here', '6352006-08-11the-buck-stops-here'],
+  ])],
+  [93, new Map([
+    ['19991101《Jacky Show》', '19991101jacky-show'],
+    ['200104《Jacky Show》', '200104jacky-show'],
+    ['20070417《沈春华Life Show》', '20070417沈春华life-show'],
+  ])],
+  [111, new Map([
+    ['“中国思想与修辞”（Rhetorice in Chinese Thought）这门课', '中国思想与修辞rhetorice-in-chinese-thought这门课'],
+  ])],
+  [139, new Map([
+    ['《你不知道的二二八》序（一）  李敖', '你不知道的二二八序一-李敖'],
+    ['《你不知道的二二八》序（二）   陈境圳', '你不知道的二二八序二-陈境圳'],
+    ['你不知道的二二八', '你不知道的二二八-1'],
+  ])],
   [163, new Map([
     ['桀骜有话说（Jeff Ao）', '桀骜有话说jeff-ao'],
     ['再见啦李敖（Jeff Ao）', '再见啦李敖jeff-ao'],
@@ -105,6 +135,7 @@ const books = sourceFiles.map((sourceFile, index) => {
     extraBodyHeadingPatterns.get(number),
     excludedTocItems.get(number),
     tocSlugOverrides.get(number),
+    strictBodyHeadingContextBooks.has(number),
   );
   const category = categories.find((entry) => number >= entry.start && number <= entry.end);
   const fileName = `${sanitizeFileName(parsed.title)}.md`;
@@ -160,6 +191,7 @@ function convertBook(
   extraBodyHeadingPattern = null,
   tocExclusions = new Set(),
   slugOverrides = new Map(),
+  requireBlankLinesAroundBodyHeadings = false,
 ) {
   const lines = sourceText.split('\n');
   const firstLineIndex = lines.findIndex((line) => line.trim());
@@ -171,7 +203,7 @@ function convertBook(
   const introLines = trimBlankLines(catalog.introNotes);
   const creditLines = trimBlankLines(lines.slice(catalog.lastItemIndex + 1, bodyStart));
   const bodyLines = lines.slice(bodyStart);
-  const bodyHeadings = collectBodyHeadings(bodyLines);
+  const bodyHeadings = collectBodyHeadings(bodyLines, requireBlankLinesAroundBodyHeadings);
   const headingPlan = planHeadings(catalog.items, bodyHeadings);
   const extraBodyHeadings = extraBodyHeadingPattern
     ? bodyHeadings.filter((heading) => extraBodyHeadingPattern.test(heading))
@@ -291,12 +323,18 @@ function findBodyStart(lines, catalog) {
   return Math.min(catalog.lastItemIndex + 1, lines.length);
 }
 
-function collectBodyHeadings(bodyLines) {
+function collectBodyHeadings(bodyLines, requireBlankLinesAround = false) {
   const headings = [];
-  for (const line of bodyLines) {
+  for (let index = 0; index < bodyLines.length; index += 1) {
+    const line = bodyLines[index];
     const trimmed = line.trim();
     if (!trimmed || /^[\s\u3000]/.test(line)) continue;
     if (trimmed.length > 120) continue;
+    if (requireBlankLinesAround) {
+      const beforeIsBlank = index === 0 || !bodyLines[index - 1].trim();
+      const afterIsBlank = index === bodyLines.length - 1 || !bodyLines[index + 1].trim();
+      if (!beforeIsBlank || !afterIsBlank) continue;
+    }
     headings.push(trimmed);
   }
   return headings;
